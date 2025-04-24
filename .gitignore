@@ -89,3 +89,4 @@ CMakeLists.txt.user*
 *.csv
 
 venv_hailo
+*venv*

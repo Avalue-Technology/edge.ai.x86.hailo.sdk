@@ -1,3 +1,6 @@
+from typing import Optional
+
+
 COCO_CLASSES = [
     "person", 
     "bicycle", 
@@ -189,7 +192,7 @@ COCO_GROUPS = {
     "sports": COCO_SPORTS
 }
 
-def find_class_id(groups: tuple, id: int):
+def find_class_id(groups: Optional[tuple], id: int):
     
     if (id > len(COCO_CLASSES)):
         return str(id)
@@ -201,10 +204,10 @@ def find_class_id(groups: tuple, id: int):
     name = ""
     for group in groups:
         coco_class = COCO_GROUPS.get(group)
-        name = coco_class.get(id)
+        name = coco_class.get(id, str(id)) # type: ignore
         
         if (name is not None):
             return name
         
-    return None
+    return str(id)
     

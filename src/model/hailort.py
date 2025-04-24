@@ -26,9 +26,11 @@ from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
                                                 HailoRTException, HailoSchedulingAlgorithm, HailoRTStreamAbortedByUser, AsyncInferJob,
                                                 HailoCommunicationClosedException)
 
+from model.runntime import Runtime
+
 logger = logging.getLogger(__name__)
 
-class Hailort:
+class Hailort(Runtime):
     
     def __init__(
         self,

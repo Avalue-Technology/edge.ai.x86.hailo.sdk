@@ -1,0 +1,314 @@
+
+import logging
+import time
+
+from typing import Dict, List, Sequence, Tuple
+from collections import defaultdict
+
+import cv2
+import numpy
+import numpy.typing
+import psutil
+import onnxruntime
+
+import commons
+from data import bounding_box
+from data.bounding_box import BoundingBox
+from data.coco_80 import find_class_id
+from data.inference_result import InferenceResult
+from data.model_information import ModelInformation
+from model.runntime import Runtime
+
+logger = logging.getLogger(__name__)
+
+class Onnxrt(Runtime):
+    
+    
+    def __init__(
+        self,
+        onnx_path: str,
+    ):
+
+        self._onnx_path = onnx_path
+        self._session: onnxruntime.InferenceSession = onnxruntime.InferenceSession(self._onnx_path)
+        
+        self._session_inputs = self._session.get_inputs()
+        self._input = self._session_inputs[0]
+        
+        logger.debug(f"input name: {self._input.name}")
+        logger.debug(f"input shape: {self._input.shape}")
+        logger.debug(f"input type: {self._input.type}")
+        
+        self._session_outputs = self._session.get_outputs()
+        self._output = self._session_outputs[0]
+        
+        logger.debug(f"output name: {self._output.name}")
+        logger.debug(f"output shape: {self._output.shape}")
+        logger.debug(f"output type: {self._output.type}")
+        
+        self._batch_size, self._channels, self._width, self._height = (
+            self._input.shape
+        )
+        
+        self._information = ModelInformation(
+			self._width,
+			self._height,
+		)
+        
+    @property
+    def information(self) -> ModelInformation:
+        return self._information
+    
+    def nmsboxes(
+        self,
+        bounding_boxes: List[BoundingBox],
+        confidence: int,
+        threshold: int,
+    )  -> Sequence[int]:
+        
+        bboxes = []
+        scores = []
+        
+        for box in bounding_boxes:
+            x1, y1 = box.lefttop()
+            x2, y2 = box.rightbottom()
+            
+            width = x2 - x1
+            height = y2 - y1
+            bboxes.append([x1, y1, width, height])
+            scores.append(box.confidence)
+            
+        return cv2.dnn.NMSBoxes(
+            bboxes,
+            scores,
+            confidence / 100,
+            threshold / 100
+        )
+    
+    def decode84(
+        self,
+        source: cv2.typing.MatLike,
+        outputs: List,
+    ) -> BoundingBox:
+        shape_height, shape_width = source.shape[:2]
+        
+        ratio = commons.get_ratio(
+            shape_width,
+            shape_height,
+            self._width,
+            self._height,
+        )
+        
+        offset_width, offset_height = commons.get_offset_length(
+            shape_width,
+            shape_height,
+            self._width,
+            self._height,
+            ratio
+        )
+        
+        x, y, width, height = outputs[0:4]
+        scores = outputs[4:]
+        
+        box = BoundingBox()
+        
+        box.id = int(numpy.argmax(scores))
+        box.name = find_class_id(None, box.id)
+        box.confidence = numpy.amax(scores)
+        
+        box.center = (
+            (x - offset_width) / ratio,
+            (y - offset_height) / ratio
+        )
+        box.width = width / ratio
+        box.height = height / ratio
+        
+        return box
+    
+    def decode6(
+        self,
+        source: cv2.typing.MatLike,
+        outputs: List,
+    ) -> BoundingBox:
+        shape_height, shape_width = source.shape[:2]
+        
+        ratio = commons.get_ratio(
+            shape_width,
+            shape_height,
+            self._width,
+            self._height,
+        )
+        
+        offset_width, offset_height = commons.get_offset_length(
+            shape_width,
+            shape_height,
+            self._width,
+            self._height,
+            ratio
+        )
+        
+        x1, y1, x2, y2 = outputs[0:4]
+        confidence = outputs[4]
+        id = outputs[5]
+        
+        x1 = (x1 - offset_width) / ratio
+        y1 = (y1 - offset_height) / ratio
+        x2 = (x2 - offset_width) / ratio
+        y2 = (y2 - offset_height) / ratio
+        
+        width = x2 - x1
+        height = y2 - y1
+        
+        box = BoundingBox()
+        box.id = int(id)
+        box.name = find_class_id(None, box.id)
+        box.confidence = confidence
+        
+        box.center = (
+            (x1 + x2) // 2,
+            (y1 + y2) // 2,
+        )
+        
+        box.width = width
+        box.height = height
+        
+        return box
+        
+    def preprocess_image(
+        self,
+        source: cv2.typing.MatLike,
+    ) -> numpy.typing.NDArray:
+        image = source
+        
+        image = commons.preprocess_image(
+            source,
+            self._width,
+            self._height
+        )
+        
+        # image = cv2.resize(
+        #     image,
+        #     (self._width, self._height),
+        #     interpolation=cv2.INTER_CUBIC
+        # )
+        
+        data = numpy.array(image) / 255.0
+        data = numpy.transpose(data, (2, 0, 1))
+        data = numpy.expand_dims(data, axis=0).astype(numpy.float32)
+        
+        return data
+        
+    def inference_image_84(
+        self,
+        source: cv2.typing.MatLike,
+        confidence: int,
+        threshold: int,
+    ) -> InferenceResult:
+        
+        image = source
+        input_data = self.preprocess_image(source)
+        
+        now = time.time()
+        output_data = self._session.run(None, {self._input.name: input_data})
+        cpu_usage = psutil.cpu_percent()
+        end = time.time()
+        spendtime = end - now
+        
+        # Transpose and squeeze the output to match the expected shape
+        outputs = numpy.transpose(numpy.squeeze(output_data[0]))
+        
+        # Get the number of rows in the output array
+        rows = outputs.shape[0]
+
+        # Lists to store the bounding boxes, scores, and class IDs of the detections
+        boxes = []
+
+        # Iterate over each row in the output array
+        for i in range(rows):
+            
+            classes_scores = outputs[i][4:]
+            max_score = numpy.amax(classes_scores)
+            
+            if max_score >= (confidence / 100):
+                box = self.decode84(source, outputs[i])
+                boxes.append(box)
+            
+        indices = self.nmsboxes(
+            boxes,
+            confidence,
+            threshold
+        )
+        
+        for i in indices:
+            box = boxes[i]
+            commons.drawbox(image, box)
+            commons.drawlabel(image, box)
+            
+        return InferenceResult(
+            spendtime,
+            cpu_usage,
+            image,
+        )
+        
+    
+    def inference_image_6(
+        self,
+        source: cv2.typing.MatLike,
+        confidence: int,
+        threshold: int,
+    ) -> InferenceResult:
+        
+        image = source
+        input_data = self.preprocess_image(image)
+        
+        now = time.time()
+        output_data = self._session.run(None, {self._input.name: input_data})
+        cpu_usage = psutil.cpu_percent()
+        end = time.time()
+        spendtime = end - now
+        
+        # Transpose and squeeze the output to match the expected shape
+        outputs = numpy.squeeze(output_data[0])
+        
+        rows = len(outputs)
+        
+        boxes = []
+        for i in range(rows):
+            score = outputs[i, -2]
+            if (score >= (confidence / 100.0)):
+                box = self.decode6(source, outputs[i])
+                boxes.append(box)
+
+        indices = self.nmsboxes(
+            boxes,
+            confidence,
+            threshold
+        )
+        
+        for i in indices:
+            box = boxes[i]
+            commons.drawbox(image, box)
+            commons.drawlabel(image, box)
+        
+        return InferenceResult(
+            spendtime,
+            cpu_usage,
+            source,
+        )
+            
+    
+    
+    def inference(
+        self,
+        source: cv2.typing.MatLike,
+        confidence: int,
+        threshold: int,
+    ) -> InferenceResult:
+        
+        if self._output.shape[1] == 84:  # YOLOv8-like
+            return self.inference_image_84(source, confidence, threshold)
+        
+        elif self._output.shape[2] == 6: # YOLOv10-like
+            return self.inference_image_6(source, confidence, threshold)
+        
+        raise NotImplementedError()
