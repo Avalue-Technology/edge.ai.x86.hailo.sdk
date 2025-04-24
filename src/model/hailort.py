@@ -1,14 +1,17 @@
 
-import numpy
 import logging
 import time
 
-from typing import Dict
-from collections import defaultdict
+from typing import Dict, List, Sequence
+
+import numpy
+import numpy.typing
 
 import cv2
 import psutil
 
+import commons
+from data.bounding_box import BoundingBox
 from data.coco_80 import find_class_id
 from data.inference_result import InferenceResult
 
@@ -26,6 +29,7 @@ from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
                                                 HailoRTException, HailoSchedulingAlgorithm, HailoRTStreamAbortedByUser, AsyncInferJob,
                                                 HailoCommunicationClosedException)
 
+from data.model_information import ModelInformation
 from model.runntime import Runtime
 
 logger = logging.getLogger(__name__)
@@ -41,14 +45,30 @@ class Hailort(Runtime):
         
         self._vdevice = VDevice()
         
-        self._configure_params = ConfigureParams.create_from_hef(self._session, interface=HailoStreamInterface.PCIe)
-        self._network_group = self._vdevice.configure(self._session, self._configure_params)[0]
+        self._configure_params = ConfigureParams.create_from_hef(
+            self._session,
+            interface=HailoStreamInterface.PCIe
+        )
+        
+        self._network_group = self._vdevice.configure(
+            self._session,
+            self._configure_params
+        )[0]
+        
         self._network_group_params = self._network_group.create_params()
-            
 
         # Create input and output virtual streams params
-        self._input_vstreams_params = InputVStreamParams.make(self._network_group, format_type=FormatType.FLOAT32)
-        self._output_vstreams_params = OutputVStreamParams.make(self._network_group, format_type=FormatType.FLOAT32)
+        self._input_vstreams_params = InputVStreamParams.make_from_network_group(
+            self._network_group,
+            quantized=False,
+            format_type=FormatType.UINT8
+        )
+        
+        self._output_vstreams_params = OutputVStreamParams.make_from_network_group(
+            self._network_group,
+            quantized=False,
+            format_type=FormatType.FLOAT32
+        )
 
         # Define dataset params
         self._input_vstream_info = self._session.get_input_vstream_infos()[0]
@@ -57,173 +77,194 @@ class Hailort(Runtime):
         self._input_name = self._input_vstream_info.name
         
         logger.debug(self._input_vstream_info)
+        logger.debug(self._input_vstream_info.name)
+        logger.debug(self._input_vstream_info.format)
+        logger.debug(self._input_vstream_info.format.type)
+        
         logger.debug(self._output_vstream_info)
+        logger.debug(self._output_vstream_info.name)
+        logger.debug(self._output_vstream_info.format)
+        logger.debug(self._output_vstream_info.format.type)
         
         self._height, self._width, self._channels = self._input_vstream_info.shape
         
-    def __nms_numpy__(self, boxes, scores, threshold):
-        x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-        areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-        order = scores.argsort()[::-1]
-
-        keep = []
-        while order.size > 0:
-            i = order[0]
-            keep.append(i)
-
-            xx1 = numpy.maximum(x1[i], x1[order[1:]])
-            yy1 = numpy.maximum(y1[i], y1[order[1:]])
-            xx2 = numpy.minimum(x2[i], x2[order[1:]])
-            yy2 = numpy.minimum(y2[i], y2[order[1:]])
-
-            w = numpy.maximum(0.0, xx2 - xx1 + 1)
-            h = numpy.maximum(0.0, yy2 - yy1 + 1)
-            
-            inter = w * h
-            union = areas[i] + areas[order[1:]] - inter
-            iou = inter / (union + 1e-6)
-
-            inds = numpy.where(iou <= threshold)[0]
-            order = order[inds + 1]
-
-        return keep
-    
-    def __nms_format__(self, boxes, classids, confidences, confidence):
+        logger.debug(self._height)
+        logger.debug(self._width)
         
-        result_boxes = []
-        result_scores = []
-        result_classids = []
-        
-        for i in range(len(boxes)):
-            if(confidences[i] < confidence):
-                continue
-            
-            x_c, y_c, w, h = boxes[i]
-            x1 = x_c - w / 2
-            y1 = y_c - h / 2
-            x2 = x_c + w / 2
-            y2 = y_c + h / 2
-            
-            result_boxes.append([x1, y1, x2, y2])
-            result_scores.append(confidences[i])
-            result_classids.append(classids[i])
-            
-        return (
-            numpy.array(result_boxes),
-            numpy.array(result_scores),
-            numpy.array(result_classids),
+        self._information = ModelInformation(
+            self._width,
+            self._height,
         )
-
-    def inference_image(self, source: cv2.typing.MatLike, confidence: int, threshold: int) -> InferenceResult:
-        image: cv2.typing.MatLike = cv2.resize(source, (self._width, self._height))
-        image = image.transpose(2, 0, 1)
         
-        input_data = image.astype(numpy.float32)
-        input_data = numpy.expand_dims(input_data, axis=0)
+    @property
+    def information(self) -> ModelInformation:
+        return self._information
+    
+    
+    def nmsboxes(
+        self,
+        bounding_boxes: List[BoundingBox],
+        confidence: int,
+        threshold: int,
+    )  -> Sequence[int]:
+        
+        bboxes = []
+        scores = []
+        
+        for box in bounding_boxes:
+            x1, y1 = box.lefttop()
+            x2, y2 = box.rightbottom()
+            
+            width = x2 - x1
+            height = y2 - y1
+            bboxes.append([x1, y1, width, height])
+            scores.append(box.confidence)
+            
+        return cv2.dnn.NMSBoxes(
+            bboxes,
+            scores,
+            confidence / 100,
+            threshold / 100
+        )
+        
+    def decode6(
+        self,
+        source: cv2.typing.MatLike,
+        outputs: List,
+    ) -> BoundingBox:
+        shape_height, shape_width = source.shape[:2]
+        
+        ratio = commons.get_ratio(
+            shape_width,
+            shape_height,
+            self._width,
+            self._height,
+        )
+        
+        offset_width, offset_height = commons.get_offset_length(
+            shape_width,
+            shape_height,
+            self._width,
+            self._height,
+            ratio
+        )
+        
+        x1, y1, x2, y2 = outputs[0:4]
+        
+        confidence = outputs[4]
+        id = outputs[5]
+        
+        x1 *= self._width
+        y1 *= self._height
+        x2 *= self._width
+        y2 *= self._height
+        
+        x1 -= offset_width
+        y1 -= offset_height
+        x2 -= offset_width
+        y2 -= offset_height
+        
+        x1 /= ratio
+        y1 /= ratio
+        x2 /= ratio
+        y2 /= ratio
+        
+        
+        width = x2 - x1
+        height = y2 - y1
+        center = (
+            (x1 + x2) // 2,
+            (y1 + y2) // 2,
+        )
+        
+        box = BoundingBox()
+        box.id = int(id)
+        box.name = find_class_id(None, box.id)
+        box.confidence = confidence
+        
+        box.center = center
+        box.width = width
+        box.height = height
+        
+        return box
+    
+    
+    def preprocess_image(
+        self,
+        source: cv2.typing.MatLike,
+    ) -> numpy.typing.NDArray:
+        
+        image = commons.preprocess_image(
+            source,
+            self._width,
+            self._height
+        )
+        
+        # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        # data = numpy.array(image)
+        # data = numpy.transpose(data, (2, 0, 1))
+        data = numpy.expand_dims(image, axis=0)
+
+        return data.astype(numpy.uint8)
+        
+
+    def inference(self, source: cv2.typing.MatLike, confidence: int, threshold: int) -> InferenceResult:
+
+        image = source
+        
+        input_data = self.preprocess_image(source)
         
         now = time.time()
-        outputs = None
-        with InferVStreams(self._network_group, self._input_vstreams_params, self._output_vstreams_params) as infer_pipeline:
+        output_data = None
+        with InferVStreams(
+            self._network_group,
+            self._input_vstreams_params,
+            self._output_vstreams_params
+        ) as infer_pipeline:
+            
             with self._network_group.activate(self._network_group_params):
-                outputs = infer_pipeline.infer({self._input_name: input_data})
+                output_data = infer_pipeline.infer({self._input_name: input_data})
                 cpu_usage = psutil.cpu_percent()
+                
         end = time.time()
-        
-        # 取得唯一一個 output 的名稱（例如 'yolov8l/yolov8_nms_postprocess'）
-        output_key = list(outputs.keys())[0]
-        class_boxes = outputs[output_key]  # 是個 list，長度為 class 數
-        
-        logger.debug(output_key)
-        logger.debug(class_boxes)
-        
-
-        results = []
-        for class_id, boxes in enumerate(class_boxes):
-            
-            logger.debug(f"class_id: {class_id}")
-            logger.debug(f"boxes: {boxes}")
-        
-        logger.debug(results)
-        return None
-        
-        output = outputs[0]  # [1, 84, 8400]
-        output = numpy.squeeze(output)  # [84, 8400]
-        output = output.transpose(1, 0)  # [8400, 84]
-
-        output_boxes = output[:, :4]  # cx, cy, w, h
-        output_scores = output[:, 4:]  # class confidences
-        output_classids = numpy.argmax(output_scores, axis=1)
-        output_confidences = numpy.max(output_scores, axis=1)
-        
-        boxes, scores, classids = (
-            self.__nms_format__(
-                output_boxes,
-                output_classids,
-                output_confidences,
-                confidence / 100
-            )
-        )
-        
-        final_boxes = []
-        final_scores = []
-        final_classids = []
-        
-        for clsid in numpy.unique(classids):
-            idxs = numpy.where(classids == clsid)[0]
-            cls_boxes = boxes[idxs]
-            cls_scores = scores[idxs]
-
-            keep = self.__nms_numpy__(
-                cls_boxes,
-                cls_scores,
-                threshold / 100
-            )
-            final_boxes.extend(cls_boxes[keep])
-            final_scores.extend(cls_scores[keep])
-            final_classids.extend([clsid] * len(keep))
-        
-
-        for i in range(len(final_boxes)):
-            box = final_boxes[i]
-            score = final_scores[i]
-            id = final_classids[i]
-            
-            # name = find_class_id(None, id)
-            name = find_class_id(("vehicle",), id)
-            # name = find_class_id(("road", "vehicle"), id)
-            # name = find_class_id(("food", "daily", "electronics"), id)
-            # name = find_class_id(("food",), id)
-            
-            if name is None:
-                continue
-            
-            x1 = int(box[0] * source.shape[1] / self._width)
-            y1 = int(box[1] * source.shape[0] / self._height)
-            x2 = int(box[2] * source.shape[1] / self._width)
-            y2 = int(box[3] * source.shape[0] / self._height)
-
-            cv2.rectangle(
-                source,
-                (x1, y1),
-                (x2, y2),
-                (0, 255, 0),
-                2
-            )
-            
-            cv2.putText(
-                source,
-                f"{id} {name} {score:.2f}",
-                (x1, max(y1 - 10, 0)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 255, 0),
-                1
-            )
-            
         spendtime = end - now
         
+        key = list(output_data.keys())[0]
+        outputs = output_data[key][0]
+        row = len(outputs)
+        
+        boxes = []
+        
+        for i in range(row):
+            
+            if len(outputs[i]) <= 0:
+                continue
+            
+            for output in outputs[i]:
+                
+                y1, x1, y2, x2, score = output #! important
+
+                if score >= (confidence / 100):
+                    box = self.decode6(
+                        source, 
+                        [x1, y1, x2, y2, score, i]
+                    )
+                    boxes.append(box)
+        
+        indices = self.nmsboxes(
+            boxes,
+            confidence,
+            threshold
+        )
+        
+        for i in indices:
+            box = boxes[i]
+            commons.drawbox(image, box)
+            commons.drawlabel(image, box)
+            
         return InferenceResult(
             spendtime,
             cpu_usage,
-            source,
+            image,
         )

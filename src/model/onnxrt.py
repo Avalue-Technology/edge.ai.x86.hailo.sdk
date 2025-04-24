@@ -158,17 +158,18 @@ class Onnxrt(Runtime):
         
         width = x2 - x1
         height = y2 - y1
+        center = (
+            (x1 + x2) // 2,
+            (y1 + y2) // 2,
+        )
+        
         
         box = BoundingBox()
         box.id = int(id)
         box.name = find_class_id(None, box.id)
         box.confidence = confidence
         
-        box.center = (
-            (x1 + x2) // 2,
-            (y1 + y2) // 2,
-        )
-        
+        box.center = center
         box.width = width
         box.height = height
         
@@ -178,7 +179,6 @@ class Onnxrt(Runtime):
         self,
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
-        image = source
         
         image = commons.preprocess_image(
             source,
