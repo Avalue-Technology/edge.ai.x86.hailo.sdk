@@ -38,8 +38,12 @@ class Hailort(Runtime):
     
     def __init__(
         self,
-        hef_path: str
+        hef_path: str,
+        drawbbox: bool,
     ):
+        
+        self._hef_path = hef_path
+        self._drawbbox = drawbbox
         
         self._session = HEF(hef_path)
         
@@ -229,6 +233,13 @@ class Hailort(Runtime):
                 
         end = time.time()
         spendtime = end - now
+        
+        if (not self._drawbbox):
+            return InferenceResult(
+                spendtime,
+                cpu_usage,
+                image,
+            )
         
         key = list(output_data.keys())[0]
         outputs = output_data[key][0]

@@ -27,9 +27,12 @@ class Onnxrt(Runtime):
     def __init__(
         self,
         onnx_path: str,
+        drawbbox: bool,
     ):
 
         self._onnx_path = onnx_path
+        self._drawbbox = drawbbox
+        
         self._session: onnxruntime.InferenceSession = onnxruntime.InferenceSession(self._onnx_path)
         
         self._session_inputs = self._session.get_inputs()
@@ -214,16 +217,17 @@ class Onnxrt(Runtime):
         end = time.time()
         spendtime = end - now
         
-        # Transpose and squeeze the output to match the expected shape
-        outputs = numpy.transpose(numpy.squeeze(output_data[0]))
+        if (not self._drawbbox):
+            return InferenceResult(
+                spendtime,
+                cpu_usage,
+                image
+            )
         
-        # Get the number of rows in the output array
+        outputs = numpy.transpose(numpy.squeeze(output_data[0]))
         rows = outputs.shape[0]
-
-        # Lists to store the bounding boxes, scores, and class IDs of the detections
         boxes = []
 
-        # Iterate over each row in the output array
         for i in range(rows):
             
             classes_scores = outputs[i][4:]
@@ -249,7 +253,6 @@ class Onnxrt(Runtime):
             cpu_usage,
             image,
         )
-        
     
     def inference_image_6(
         self,
@@ -267,12 +270,17 @@ class Onnxrt(Runtime):
         end = time.time()
         spendtime = end - now
         
-        # Transpose and squeeze the output to match the expected shape
+        if (not self._drawbbox):
+            return InferenceResult(
+                spendtime,
+                cpu_usage,
+                image
+            )
+
         outputs = numpy.squeeze(output_data[0])
-        
         rows = len(outputs)
-        
         boxes = []
+        
         for i in range(rows):
             score = outputs[i, -2]
             if (score >= (confidence / 100.0)):
@@ -295,8 +303,6 @@ class Onnxrt(Runtime):
             cpu_usage,
             source,
         )
-            
-    
     
     def inference(
         self,

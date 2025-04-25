@@ -29,9 +29,11 @@ class Tflitert(Runtime):
     def __init__(
         self,
         tflite_path: str,
+        drawbbox: bool,
     ):
         
         self._tflite_path = tflite_path
+        self._drawbbox = drawbbox
         
         self._session = tflite.Interpreter(model_path=tflite_path)
         self._session.allocate_tensors()
@@ -132,6 +134,13 @@ class Tflitert(Runtime):
         cpu_usage = psutil.cpu_percent()
         end = time.time()
         spendtime = end - now
+        
+        if (not self._drawbbox):
+            return InferenceResult(
+                spendtime,
+                cpu_usage,
+                image,
+            )
         
         output_data = self._session.get_tensor(self._output.get("index"))
         output_data = numpy.squeeze(output_data)
