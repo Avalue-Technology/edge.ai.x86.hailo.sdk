@@ -12,6 +12,7 @@ from model.onnxrt import Onnxrt
 from model.runntime import Runtime
 
 import commons
+from model.tflitert import Tflitert
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -45,6 +46,9 @@ def loadonnx(onnxpath: str) -> Runtime:
 def loadhef(hefpath: str) -> Runtime:
     return Hailort(hefpath)
 
+def loadtflite(tflitepath: str) -> Runtime:
+    return Tflitert(tflitepath)
+
 def loadmodel(model_path: str) -> Runtime:
     mp = Path(model_path)
 
@@ -53,6 +57,9 @@ def loadmodel(model_path: str) -> Runtime:
         
     elif (mp.suffix.lower() == ".hef"):
         return loadhef(model_path)
+    
+    elif (mp.suffix.lower() == ".tflite"):
+        return loadtflite(model_path)
     
     raise ValueError(f"unsupport model type: {mp.suffix}")
 
@@ -65,7 +72,6 @@ def main():
     
     while True:
         sample_file = sample_files[index]
-        logger.debug(index)
         
         is_image, is_video = commons.filextension(sample_file)
     

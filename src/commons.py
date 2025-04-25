@@ -32,7 +32,14 @@ def filextension(filepath: str) -> Tuple[bool, bool]:
     
 def fileslist(sample_path: str) -> List[str]:
     path = Path(sample_path)
-    return [str(file) for file in path.glob("*")]
+    
+    if (path.is_file()):
+        return [str(sample_path)]
+    
+    elif (path.is_dir()):
+        return [str(file) for file in path.glob("*")]
+    
+    return []
     
 
 def read_video(video_path: str) -> cv2.VideoCapture:
@@ -144,6 +151,7 @@ def drawlabel(
     box: BoundingBox,
 ) -> cv2.typing.MatLike:
     
+    shape_height, shape_width = image.shape[:2]
     label = f"{str(box.id)}:{box.name}({int(box.confidence * 100)}%)"
     
     (labelw, labelh), _ = cv2.getTextSize(
@@ -157,6 +165,19 @@ def drawlabel(
     labelx = left
     labely = top - 10 if top - 10 > labelh else top + 10
     
+    if (labelx + labelw > shape_width):
+        labelx = shape_width - labelw
+        
+    if (labely + labelh > shape_height):
+        labely = shape_height - labelh
+        
+    if (labelx - labelw < 0):
+        labelx = 10
+        
+    if (labely - labelh < 0):
+        labely = 10
+        
+    
     cv2.rectangle(
         image,
         (int(labelx), int(labely - labelh)),
@@ -168,7 +189,7 @@ def drawlabel(
     cv2.putText(
         image,
         label,
-        (labelx, labely),
+        (labelx, labely + (labelh // 2)),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.5,
         (0, 0, 0),
