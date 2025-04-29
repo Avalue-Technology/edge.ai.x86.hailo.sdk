@@ -1,5 +1,6 @@
 
 import logging
+from pathlib import Path
 import time
 
 from typing import Dict, List, Sequence
@@ -96,6 +97,7 @@ class Hailort(Runtime):
         logger.debug(self._width)
         
         self._information = ModelInformation(
+            Path(hef_path).name,
             self._width,
             self._height,
         )

@@ -1,5 +1,6 @@
 
 import logging
+from pathlib import Path
 import time
 
 from typing import Dict, List, Sequence, Tuple
@@ -54,6 +55,7 @@ class Onnxrt(Runtime):
         )
         
         self._information = ModelInformation(
+            Path(onnx_path).name,
 			self._width,
 			self._height,
 		)

@@ -81,6 +81,41 @@ def loadmodel(model_path: str) -> Runtime:
     
     raise ValueError(f"unsupport model type: {mp.suffix}")
 
+def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
+    image_height, image_width = image.shape[:2]
+    label: str = name
+    
+    (labelw, labelh), _ = cv2.getTextSize(
+        label,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        monitor_label_scale,
+        monitor_label_thickness,
+    )
+    
+    labelx = (image_width // 2) - (labelw // 2)
+    labely = image_height - labelh
+    
+    cv2.rectangle(
+        image,
+        (int(labelx), int(labely - labelh)),
+        (int(labelx + labelw), int(labely + labelh)),
+        (0, 255, 0),
+        cv2.FILLED
+    )
+    
+    cv2.putText(
+        image,
+        label,
+        (labelx, labely + (labelh // 2)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        monitor_label_scale,
+        (0, 0, 0),
+        monitor_label_thickness,
+        cv2.LINE_AA
+    )
+    
+    
+
 def drawspendtime(image: cv2.typing.MatLike, spendtime: float):
     image_height, image_width = image.shape[:2]
     
@@ -160,7 +195,7 @@ def main():
         cv2.setWindowProperty(
             windowname,
             cv2.WND_PROP_FULLSCREEN,
-            cv2.WINDOW_FULLSCREEN
+            cv2.WINDOW_NORMAL
         )
         
     if (is_monitor):
@@ -239,6 +274,7 @@ def display_inference_video(runtime: Runtime, filepath: str) -> None:
         if (is_monitor):
             monitor.add_count()
             monitor.add_spendtime(result.spendtime)
+            drawmodelname(result.image, runtime.information.name)
             drawspendtime(result.image, monitor.spandtime)
             drawfps(result.image, monitor.framecount)
         
