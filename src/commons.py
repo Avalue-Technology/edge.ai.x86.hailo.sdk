@@ -71,6 +71,22 @@ def read_images(image_path: str) -> List[cv2.typing.MatLike]:
         
     return results
 
+def read_url_video(url: str) -> cv2.VideoCapture:
+    return cv2.VideoCapture(url)
+
+
+def get_label_scale(width: int) -> float:
+    scale = width / 1000
+    
+    if (scale >= 1):
+        return 1
+    
+    elif (scale <= 0.3):
+        return 0.3
+    
+    else:
+        return scale
+
 def get_ratio(
     originwidth: int,
     originheight: int,
@@ -157,7 +173,7 @@ def drawlabel(
     (labelw, labelh), _ = cv2.getTextSize(
         label,
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
+        get_label_scale(shape_width),
         1
     )
     
@@ -171,11 +187,11 @@ def drawlabel(
     if (labely + labelh > shape_height):
         labely = shape_height - labelh
         
-    if (labelx - labelw < 0):
-        labelx = 10
+    if (labelx < 0):
+        labelx = 1
         
     if (labely - labelh < 0):
-        labely = 10
+        labely = labelh
         
     
     cv2.rectangle(
@@ -191,7 +207,7 @@ def drawlabel(
         label,
         (labelx, labely + (labelh // 2)),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
+        get_label_scale(shape_width),
         (0, 0, 0),
         1,
         cv2.LINE_AA

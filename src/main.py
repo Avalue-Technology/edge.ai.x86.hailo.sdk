@@ -6,9 +6,11 @@ import threading
 
 from pathlib import Path
 import time
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import cv2
+
+from vidgear.gears import CamGear
 
 import commons
 
@@ -29,7 +31,9 @@ logger = logging.getLogger(__name__)
 windowname = "test"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-s", "--sample-path", type=str, help="sample path")
+parser.add_argument("-spath", "--sample-path", type=str, default=None, help="sample path")
+parser.add_argument("-smjpeg", "--sample-mjpeg", type=str, default=None, help="cctv mjpeg url")
+parser.add_argument("-syoutube", "--sample-youtube", type=str, default=None, help="youtube url")
 parser.add_argument("-m", "--model-path", type=str, help="model path")
 parser.add_argument("-c", "--confidence", type=int, default=50, help="confidence threshold")
 parser.add_argument("-t", "--threshold", type=int, default=50, help="nms filter threshold")
@@ -40,7 +44,8 @@ parser.add_argument("-f", "--fps", action="store_true", help="monitor inference 
 args = parser.parse_args()
 
 sample_path  = args.sample_path # "/home/avalue/hailosdk/samples/images"
-sample_files = commons.fileslist(sample_path)
+sample_mjpeg = args.sample_mjpeg
+sample_youtube = args.sample_youtube
 
 model_path = args.model_path #"/home/avalue/hailosdk/models/object-detection/yolo/onnx/yolo11x.onnx"
 
@@ -52,8 +57,9 @@ is_loop = args.loop
 is_monitor = args.fps
 
 logger.debug(f"is_display: {is_display}, is_loop: {is_loop}, is_monitor: {is_monitor}")
+logger.debug(f"samples: {sample_path} {sample_mjpeg} {sample_youtube}")
 
-monitor_label_scale = 1
+monitor_label_scale = 0.5
 monitor_label_thickness = 1
 
 monitor = Monitor(Path(model_path).name)
@@ -81,14 +87,15 @@ def loadmodel(model_path: str) -> Runtime:
     
     raise ValueError(f"unsupport model type: {mp.suffix}")
 
+
 def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
     image_height, image_width = image.shape[:2]
-    label: str = name
+    label: str = f"Model: {name}"
     
     (labelw, labelh), _ = cv2.getTextSize(
         label,
         cv2.FONT_HERSHEY_SIMPLEX,
-        monitor_label_scale,
+        commons.get_label_scale(image_width),
         monitor_label_thickness,
     )
     
@@ -108,7 +115,7 @@ def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
         label,
         (labelx, labely + (labelh // 2)),
         cv2.FONT_HERSHEY_SIMPLEX,
-        monitor_label_scale,
+        commons.get_label_scale(image_width),
         (0, 0, 0),
         monitor_label_thickness,
         cv2.LINE_AA
@@ -119,13 +126,12 @@ def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
 def drawspendtime(image: cv2.typing.MatLike, spendtime: float):
     image_height, image_width = image.shape[:2]
     
-    
-    label: str = f"{int(spendtime * 1000)}ms"
+    label: str = f"Latency: {int(spendtime * 1000)}ms"
     
     (labelw, labelh), _ = cv2.getTextSize(
         label,
         cv2.FONT_HERSHEY_SIMPLEX,
-        monitor_label_scale,
+        commons.get_label_scale(image_width),
         monitor_label_thickness,
     )
     
@@ -145,7 +151,7 @@ def drawspendtime(image: cv2.typing.MatLike, spendtime: float):
         label,
         (labelx, labely + (labelh // 2)),
         cv2.FONT_HERSHEY_SIMPLEX,
-        monitor_label_scale,
+        commons.get_label_scale(image_width),
         (0, 0, 0),
         monitor_label_thickness,
         cv2.LINE_AA
@@ -153,12 +159,12 @@ def drawspendtime(image: cv2.typing.MatLike, spendtime: float):
 
 def drawfps(image: cv2.typing.MatLike, framecount: float):
     image_height, image_width = image.shape[:2]
-    label: str = f"{framecount:.1f}"
+    label: str = f"FPS: {framecount:.1f}"
     
     (labelw, labelh), _ = cv2.getTextSize(
         label,
         cv2.FONT_HERSHEY_SIMPLEX,
-        monitor_label_scale,
+        commons.get_label_scale(image_width),
         monitor_label_thickness
     )
     
@@ -178,7 +184,7 @@ def drawfps(image: cv2.typing.MatLike, framecount: float):
         label,
         (labelx, labely + (labelh // 2)),
         cv2.FONT_HERSHEY_SIMPLEX,
-        monitor_label_scale,
+        commons.get_label_scale(image_width),
         (0, 0, 0),
         monitor_label_thickness,
         cv2.LINE_AA
@@ -201,8 +207,26 @@ def main():
     if (is_monitor):
         monitor.start()
         
-    
     runtime = loadmodel(model_path)
+    
+    if (sample_path is not None):
+        path = Path(sample_path)
+        if(path.is_file() or path.is_dir()):
+            sample_files = commons.fileslist(sample_path)
+            display_inference_files(runtime, sample_files)
+            
+    elif (sample_mjpeg is not None):
+        if(sample_mjpeg.find("http") >= 0):
+            display_inference_url_mjpeg(runtime, sample_mjpeg)
+        
+    elif (sample_youtube is not None):
+        if(sample_youtube.find("youtu") >= 0):
+            display_inference_url_youtube(runtime, sample_youtube)
+        
+    if (is_display):
+        cv2.destroyAllWindows()
+        
+def display_inference_files(runtime: Runtime, sample_files: List[str]):
     index = 0
     max = len(sample_files)
     
@@ -216,7 +240,7 @@ def main():
     
         elif (is_video):
             display_inference_video(runtime, sample_file)
-    
+            
         else:
             logger.error(f"sample_file: {sample_file} both not image or video")
         
@@ -239,9 +263,6 @@ def main():
         elif key == 65363:  # Right Arrow
             index = (index + 1) % max
             
-    if (is_display):
-        cv2.destroyAllWindows()
-
 def display_inference_image(runtime: Runtime, filepath: str) -> None:
     logger.debug(filepath)
     
@@ -283,6 +304,83 @@ def display_inference_video(runtime: Runtime, filepath: str) -> None:
             key = cv2.waitKeyEx(1)
             if key == ord('q') or key == ord('Q'):
                 break
+
+def display_inference_url_mjpeg(runtime: Runtime, url: str) -> None:
+    capture = commons.read_url_video(url)
+    
+    if (not capture.isOpened()):
+        logger.error(f"open url failed url: {url}")
+        return None
+    
+    while(True):
+        
+        ret, frame = capture.read()
+        if (not ret):
+            capture = commons.read_url_video(url)
+            continue
+        
+        result = runtime.inference(
+            frame,
+            confidence,
+            threshold
+        )
+        
+        if (is_monitor):
+            monitor.add_count()
+            monitor.add_spendtime(result.spendtime)
+            drawmodelname(result.image, runtime.information.name)
+            drawspendtime(result.image, monitor.spandtime)
+            drawfps(result.image, monitor.framecount)
+        
+        if (is_display):
+            cv2.imshow(windowname, result.image)
+            key = cv2.waitKeyEx(1)
+            if key == ord('q') or key == ord('Q'):
+                break
+            
+def display_inference_url_youtube(runtime: Runtime, url: str) -> None:
+    options: Dict[str, str] = {
+        # "CAP_PROP_FRAME_WIDTH": 1920, # resolution 320x240
+        # "CAP_PROP_FRAME_HEIGHT": 1080,
+        # "CAP_PROP_FPS": 60, # framerate 60fps
+        "STREAM_RESOLUTION": "1080P",
+    }
+    
+    
+    stream = CamGear(
+        source=url, # type: ignore
+        stream_mode=True,
+        logging=True,
+        **options, # type: ignore
+        
+    ).start()
+    
+    while True:
+    
+        
+        frame = stream.read()
+        if (frame is None):
+            break
+        
+        result = runtime.inference(
+            frame,
+            confidence,
+            threshold
+        )
+        
+        if (is_monitor):
+            monitor.add_count()
+            monitor.add_spendtime(result.spendtime)
+            drawmodelname(result.image, runtime.information.name)
+            drawspendtime(result.image, monitor.spandtime)
+            drawfps(result.image, monitor.framecount)
+        
+        if (is_display):
+            cv2.imshow(windowname, result.image)
+            key = cv2.waitKeyEx(1)
+            if key == ord('q') or key == ord('Q'):
+                break
+    
 
 if __name__ == "__main__":
     main()
