@@ -10,8 +10,6 @@ from typing import Callable, Dict, List, Optional
 
 import cv2
 
-from vidgear.gears import CamGear
-
 import commons
 
 from data.inference_result import InferenceResult
@@ -337,50 +335,6 @@ def display_inference_url_mjpeg(runtime: Runtime, url: str) -> None:
             key = cv2.waitKeyEx(1)
             if key == ord('q') or key == ord('Q'):
                 break
-            
-def display_inference_url_youtube(runtime: Runtime, url: str) -> None:
-    options: Dict[str, str] = {
-        # "CAP_PROP_FRAME_WIDTH": 1920, # resolution 320x240
-        # "CAP_PROP_FRAME_HEIGHT": 1080,
-        # "CAP_PROP_FPS": 60, # framerate 60fps
-        "STREAM_RESOLUTION": "1080P",
-    }
-    
-    
-    stream = CamGear(
-        source=url, # type: ignore
-        stream_mode=True,
-        logging=True,
-        **options, # type: ignore
-        
-    ).start()
-    
-    while True:
-    
-        
-        frame = stream.read()
-        if (frame is None):
-            break
-        
-        result = runtime.inference(
-            frame,
-            confidence,
-            threshold
-        )
-        
-        if (is_monitor):
-            monitor.add_count()
-            monitor.add_spendtime(result.spendtime)
-            drawmodelname(result.image, runtime.information.name)
-            drawspendtime(result.image, monitor.spandtime)
-            drawfps(result.image, monitor.framecount)
-        
-        if (is_display):
-            cv2.imshow(windowname, result.image)
-            key = cv2.waitKeyEx(1)
-            if key == ord('q') or key == ord('Q'):
-                break
-    
-
+           
 if __name__ == "__main__":
     main()
