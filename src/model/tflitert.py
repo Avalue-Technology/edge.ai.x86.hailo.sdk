@@ -1,6 +1,7 @@
 
 import logging
 from pathlib import Path
+import platform
 import time
 
 from typing import Dict, List, Sequence, Tuple
@@ -51,6 +52,7 @@ class Tflitert(Runtime):
         
         self._information = ModelInformation(
             Path(tflite_path).name,
+            platform.processor(),
             self._width,
             self._height
         )
@@ -58,6 +60,15 @@ class Tflitert(Runtime):
     @property
     def information(self) -> ModelInformation:
         return self._information
+
+    @property
+    def temperature(self) -> int:
+        coretemp = psutil.sensors_temperatures().get("coretemp")
+        
+        if (coretemp is not None):
+            return int(coretemp[0].current)
+        
+        return 0
     
     def decode6(self, source: cv2.typing.MatLike, outputs: List):
         shape_height, shape_width = source.shape[:2]

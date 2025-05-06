@@ -18,6 +18,11 @@ class Runtime():
     def information(self) -> ModelInformation:
         pass
     
+    @property
+    @abstractmethod
+    def temperature(self) -> int:
+        pass
+    
     @abstractmethod
     def inference(
         self,

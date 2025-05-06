@@ -16,6 +16,7 @@ from data.bounding_box import BoundingBox
 from data.coco_80 import find_class_id
 from data.inference_result import InferenceResult
 
+from hailo_platform import Device
 
 from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
                                                 FormatType, FormatOrder,
@@ -50,6 +51,19 @@ class Hailort(Runtime):
         
         self._vdevice = VDevice()
         
+        self._device = Device()
+        self._device_information = self._device.control.identify()
+        
+        logger.debug(
+            f"""
+serial number:    {self._device_information.serial_number}
+firware version:  {self._device_information.firmware_version}
+part number:      {self._device_information.part_number}
+product name:     {self._device_information.product_name}
+board name:       {self._device_information.board_name}
+            """
+        )
+        
         self._configure_params = ConfigureParams.create_from_hef(
             self._session,
             interface=HailoStreamInterface.PCIe
@@ -80,7 +94,7 @@ class Hailort(Runtime):
         self._output_vstream_info = self._session.get_output_vstream_infos()[0]
         
         self._input_name = self._input_vstream_info.name
-        
+                
         logger.debug(self._input_vstream_info)
         logger.debug(self._input_vstream_info.name)
         logger.debug(self._input_vstream_info.format)
@@ -98,6 +112,7 @@ class Hailort(Runtime):
         
         self._information = ModelInformation(
             Path(hef_path).name,
+            self._device_information.board_name,
             self._width,
             self._height,
         )
@@ -105,6 +120,10 @@ class Hailort(Runtime):
     @property
     def information(self) -> ModelInformation:
         return self._information
+    
+    @property
+    def temperature(self) -> int:
+        return int(self._device.control.get_chip_temperature().ts0_temperature)
     
     
     def nmsboxes(

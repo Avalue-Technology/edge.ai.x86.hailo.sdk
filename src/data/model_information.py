@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 class ModelInformation:
     
     name: str
+    device: str
     width: int
     height: int
     

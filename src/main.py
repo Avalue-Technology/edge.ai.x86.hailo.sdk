@@ -1,19 +1,14 @@
 
 import argparse
-import sys
 import logging
-import threading
-
-from pathlib import Path
-import time
-from typing import Callable, Dict, List, Optional
 
 import cv2
 
+from pathlib import Path
+from typing import List
+
 import commons
 
-from data.inference_result import InferenceResult
-from data.model_information import ModelInformation
 from model.hailort import Hailort
 from model.onnxrt import Onnxrt
 from model.runntime import Runtime
@@ -31,7 +26,6 @@ windowname = "test"
 parser = argparse.ArgumentParser()
 parser.add_argument("-spath", "--sample-path", type=str, default=None, help="sample path")
 parser.add_argument("-smjpeg", "--sample-mjpeg", type=str, default=None, help="cctv mjpeg url")
-parser.add_argument("-syoutube", "--sample-youtube", type=str, default=None, help="youtube url")
 parser.add_argument("-m", "--model-path", type=str, help="model path")
 parser.add_argument("-c", "--confidence", type=int, default=50, help="confidence threshold")
 parser.add_argument("-t", "--threshold", type=int, default=50, help="nms filter threshold")
@@ -43,7 +37,6 @@ args = parser.parse_args()
 
 sample_path  = args.sample_path # "/home/avalue/hailosdk/samples/images"
 sample_mjpeg = args.sample_mjpeg
-sample_youtube = args.sample_youtube
 
 model_path = args.model_path #"/home/avalue/hailosdk/models/object-detection/yolo/onnx/yolo11x.onnx"
 
@@ -55,7 +48,7 @@ is_loop = args.loop
 is_monitor = args.fps
 
 logger.debug(f"is_display: {is_display}, is_loop: {is_loop}, is_monitor: {is_monitor}")
-logger.debug(f"samples: {sample_path} {sample_mjpeg} {sample_youtube}")
+logger.debug(f"samples: {sample_path} {sample_mjpeg}")
 
 monitor_label_scale = 0.5
 monitor_label_thickness = 1
@@ -202,10 +195,13 @@ def main():
             cv2.WINDOW_NORMAL
         )
         
-    if (is_monitor):
-        monitor.start()
         
     runtime = loadmodel(model_path)
+    monitor.get_temperature = lambda : runtime.temperature
+    monitor.get_information = lambda : runtime.information
+    
+    if (is_monitor):
+        monitor.start()
     
     if (sample_path is not None):
         path = Path(sample_path)
@@ -216,10 +212,6 @@ def main():
     elif (sample_mjpeg is not None):
         if(sample_mjpeg.find("http") >= 0):
             display_inference_url_mjpeg(runtime, sample_mjpeg)
-        
-    elif (sample_youtube is not None):
-        if(sample_youtube.find("youtu") >= 0):
-            display_inference_url_youtube(runtime, sample_youtube)
         
     if (is_display):
         cv2.destroyAllWindows()
