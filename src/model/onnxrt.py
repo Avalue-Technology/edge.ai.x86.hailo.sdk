@@ -57,7 +57,7 @@ class Onnxrt(Runtime):
         
         self._information = ModelInformation(
             Path(onnx_path).name,
-            platform.processor(),
+            f"CPU {platform.processor()}",
 			self._width,
 			self._height,
 		)

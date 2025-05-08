@@ -112,7 +112,7 @@ board name:       {self._device_information.board_name}
         
         self._information = ModelInformation(
             Path(hef_path).name,
-            self._device_information.board_name,
+            str(self._device_information.device_architecture),
             self._width,
             self._height,
         )

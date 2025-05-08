@@ -5,6 +5,8 @@ import threading
 import time
 import sys
 import logging
+import shutil
+
 from datetime import datetime
 
 HEF_DIR = pathlib.Path("models/object-detection")
@@ -15,11 +17,20 @@ TIMEOUT_SECONDS = 180
 def find_hef_files():
     return sorted(HEF_DIR.glob("**/hailo-8l-hef/*.hef"))
 
-def print_progress(percent: float, last_line: str, bar_len: int = 30):
+def print_progress(percent: float, last_line: str, bar_ratio = 0.3):
+    terminal_width = shutil.get_terminal_size(fallback=(80, 24)).columns
+
+    # 建立 progress bar
+    bar_len = int(terminal_width * bar_ratio)
     filled_len = int(round(bar_len * percent / 100))
     bar = '=' * filled_len + '-' * (bar_len - filled_len)
-    sys.stdout.write(f"\r[{bar}] {percent:.1f}% {last_line[102:]}")
+    progress = f"[{bar}] {percent:5.1f}%"
+
+    # 計算剩餘空間
+    remaining_width = terminal_width - len(progress) - 1  # -1 for spacing
+    trimmed_line = last_line[-remaining_width:] if remaining_width > 0 else ''
     
+    sys.stdout.write(f"\r{progress} {trimmed_line}")
     sys.stdout.flush()
 
 def run_inference(hef_path: pathlib.Path) -> str:
@@ -33,9 +44,14 @@ def run_inference(hef_path: pathlib.Path) -> str:
         f"-m={hef_path}"
     ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    print(f"run {cmd}")
-
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    
     output_lines = []
     output_queue = queue.Queue()
 

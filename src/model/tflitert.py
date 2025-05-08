@@ -52,7 +52,7 @@ class Tflitert(Runtime):
         
         self._information = ModelInformation(
             Path(tflite_path).name,
-            platform.processor(),
+            f"CPU {platform.processor()}",
             self._width,
             self._height
         )
