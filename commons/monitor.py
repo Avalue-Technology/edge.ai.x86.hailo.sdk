@@ -1,16 +1,17 @@
 
 
-from abc import abstractmethod
 
-from collections import deque
 import threading
 import time
 import logging
-from typing import Deque
-
 import numpy
 
-from data.model_information import ModelInformation
+from abc import abstractmethod
+from collections import deque
+from typing import Deque
+
+
+from ..data.model_information import ModelInformation
 
 logger = logging.getLogger(__name__)
 

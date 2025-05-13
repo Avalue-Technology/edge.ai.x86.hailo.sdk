@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 
 import cv2
 
-from data.inference_result import InferenceResult
-from data.model_information import ModelInformation
+from ..data.inference_result import InferenceResult
+from ..data.model_information import ModelInformation
 
 
 class Runtime():

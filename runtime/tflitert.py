@@ -1,9 +1,9 @@
 
 import logging
-from pathlib import Path
 import platform
 import time
 
+from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 from collections import defaultdict
 
@@ -13,16 +13,14 @@ import numpy.typing
 import psutil
 import tflite_runtime.interpreter as tflite
 
+from ..commons import utils
 
+from ..data.bounding_box import BoundingBox
+from ..data.coco_90 import find_class_id
+from ..data.inference_result import InferenceResult
+from ..data.model_information import ModelInformation
 
-import commons
-
-from data import bounding_box
-from data.bounding_box import BoundingBox
-from data.coco_90 import find_class_id
-from data.inference_result import InferenceResult
-from data.model_information import ModelInformation
-from model.runntime import Runtime
+from .runtime import Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +71,14 @@ class Tflitert(Runtime):
     def decode6(self, source: cv2.typing.MatLike, outputs: List):
         shape_height, shape_width = source.shape[:2]
         
-        ratio = commons.get_ratio(
+        ratio = utils.get_ratio(
             shape_width,
             shape_height,
             self._width,
             self._height,
         )
         
-        offset_width, offset_height = commons.get_offset_length(
+        offset_width, offset_height = utils.get_offset_length(
             shape_width,
             shape_height,
             self._width,
@@ -122,7 +120,7 @@ class Tflitert(Runtime):
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
         
-        image = commons.preprocess_image(
+        image = utils.preprocess_image(
             source,
             self._width,
             self._height
@@ -176,8 +174,8 @@ class Tflitert(Runtime):
 
         for i in range(len(boxes)):
             box = boxes[i]
-            commons.drawbox(image, box)
-            commons.drawlabel(image, box)
+            utils.drawbox(image, box)
+            utils.drawlabel(image, box)
             
         return InferenceResult(
             spendtime,

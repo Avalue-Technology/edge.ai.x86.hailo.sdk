@@ -1,15 +1,14 @@
 
+import cv2
 import logging
 
 from pathlib import Path
 from typing import List, Tuple
 
-import cv2
-
 import numpy
 import numpy.typing
 
-from data.bounding_box import BoundingBox
+from ..data.bounding_box import BoundingBox
 
 logger = logging.getLogger(__name__)
 

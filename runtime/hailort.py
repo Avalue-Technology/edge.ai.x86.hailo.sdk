@@ -1,8 +1,8 @@
 
 import logging
-from pathlib import Path
 import time
 
+from pathlib import Path
 from typing import Dict, List, Sequence
 
 import numpy
@@ -11,13 +11,15 @@ import numpy.typing
 import cv2
 import psutil
 
-import commons
-from data.bounding_box import BoundingBox
-from data.coco_80 import find_class_id
-from data.inference_result import InferenceResult
+from ..commons import utils
+from ..data.bounding_box import BoundingBox
+from ..data.coco_80 import find_class_id
+from ..data.inference_result import InferenceResult
+from ..data.model_information import ModelInformation
+
+from .runtime import Runtime
 
 from hailo_platform import Device
-
 from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
                                                 FormatType, FormatOrder,
                                                 MipiDataTypeRx, MipiPixelsPerClock,
@@ -31,8 +33,6 @@ from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
                                                 HailoRTException, HailoSchedulingAlgorithm, HailoRTStreamAbortedByUser, AsyncInferJob,
                                                 HailoCommunicationClosedException)
 
-from data.model_information import ModelInformation
-from model.runntime import Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -159,14 +159,14 @@ board name:       {self._device_information.board_name}
     ) -> BoundingBox:
         shape_height, shape_width = source.shape[:2]
         
-        ratio = commons.get_ratio(
+        ratio = utils.get_ratio(
             shape_width,
             shape_height,
             self._width,
             self._height,
         )
         
-        offset_width, offset_height = commons.get_offset_length(
+        offset_width, offset_height = utils.get_offset_length(
             shape_width,
             shape_height,
             self._width,
@@ -219,7 +219,7 @@ board name:       {self._device_information.board_name}
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
         
-        image = commons.preprocess_image(
+        image = utils.preprocess_image(
             source,
             self._width,
             self._height
@@ -292,8 +292,8 @@ board name:       {self._device_information.board_name}
         
         for i in indices:
             box = boxes[i]
-            commons.drawbox(image, box)
-            commons.drawlabel(image, box)
+            utils.drawbox(image, box)
+            utils.drawlabel(image, box)
             
         return InferenceResult(
             spendtime,
