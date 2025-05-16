@@ -13,6 +13,8 @@ import numpy.typing
 import psutil
 import tflite_runtime.interpreter as tflite
 
+from sdk.data.inference_source import InferenceSource
+
 from ..commons import utils
 
 from ..data.bounding_box import BoundingBox
@@ -29,11 +31,10 @@ class Tflitert(Runtime):
     def __init__(
         self,
         tflite_path: str,
-        drawbbox: bool,
     ):
+        super().__init__()
         
         self._tflite_path = tflite_path
-        self._drawbbox = drawbbox
         
         self._session = tflite.Interpreter(model_path=tflite_path)
         self._session.allocate_tensors()
@@ -54,10 +55,6 @@ class Tflitert(Runtime):
             self._width,
             self._height
         )
-        
-    @property
-    def information(self) -> ModelInformation:
-        return self._information
 
     @property
     def temperature(self) -> int:
@@ -133,25 +130,17 @@ class Tflitert(Runtime):
         return data.astype(numpy.uint8)
     
     
-    def inference(self, source: cv2.typing.MatLike, confidence: int, threshold: int) -> InferenceResult:
-        
-        image = source
-        
-        input_data = self.preprocess_image(source)
+    def inference(self, source: InferenceSource) -> InferenceResult:
+        input_data = self.preprocess_image(source.image)
         
         now = time.time()
         self._session.set_tensor(self._input.get("index"), input_data)
         self._session.invoke()
-        cpu_usage = psutil.cpu_percent()
         end = time.time()
         spendtime = end - now
         
-        if (not self._drawbbox):
-            return InferenceResult(
-                spendtime,
-                cpu_usage,
-                image,
-            )
+        if (not self.display):
+            return InferenceResult(source)
         
         output_data = self._session.get_tensor(self._output.get("index"))
         output_data = numpy.squeeze(output_data)
@@ -164,9 +153,9 @@ class Tflitert(Runtime):
             outputs = output_data[i]
             _, y1, x1, y2, x2, score, id = outputs
             
-            if score >= (confidence / 100):
+            if score >= (source.confidence / 100):
                 box = self.decode6(
-                    source,
+                    source.image,
                     [x1, y1, x2, y2, score, id]
                 )
                 
@@ -174,11 +163,7 @@ class Tflitert(Runtime):
 
         for i in range(len(boxes)):
             box = boxes[i]
-            utils.drawbox(image, box)
-            utils.drawlabel(image, box)
+            utils.drawbox(source.image, box)
+            utils.drawlabel(source.image, box)
             
-        return InferenceResult(
-            spendtime,
-            cpu_usage,
-            image,
-        )
+        return InferenceResult(source)

@@ -1,5 +1,11 @@
 
+from asyncio import Queue
+import asyncio
+from dataclasses import dataclass
+from functools import partial
 import logging
+from multiprocessing import Process
+import threading
 import time
 
 from pathlib import Path
@@ -11,7 +17,9 @@ import numpy.typing
 import cv2
 import psutil
 
+from sdk.data.circular_buffer import CircularBuffer
 from sdk.data.inference_source import InferenceSource
+from sdk.runtime.runtimeasync import RuntimeAsync
 
 from ..commons import utils
 from ..data.bounding_box import BoundingBox
@@ -35,10 +43,9 @@ from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
                                                 HailoRTException, HailoSchedulingAlgorithm, HailoRTStreamAbortedByUser, AsyncInferJob,
                                                 HailoCommunicationClosedException)
 
-
 logger = logging.getLogger(__name__)
 
-class Hailort(Runtime):
+class HailortAsync(RuntimeAsync):
     
     def __init__(
         self,
@@ -50,56 +57,37 @@ class Hailort(Runtime):
         
         self._session = HEF(hef_path)
         
-        self._vdevice = VDevice()
+        self._vdevice_params = VDevice.create_params()
+        
+        # hailo/hailort/hailort/libhailort/include/hailo/hailort.h:hailo_scheduling_algorithm_e
+        self._vdevice_params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
+        
+        # hailo/hailort/hailort/libhailort/include/hailo/hailort.h:hailo_vdevice_params_t
+        # self._vdevice_params.multi_process_service = False
+        
+        self._vdevice = VDevice(self._vdevice_params)
+        
+        self._infer_model = self._vdevice.create_infer_model(hef_path)
+        self._configured_infer_model = self._infer_model.configure()
         
         self._device = Device()
         self._device_information = self._device.control.identify()
         
-        logger.debug(
-            f"""
-serial number:    {self._device_information.serial_number}
-firware version:  {self._device_information.firmware_version}
-part number:      {self._device_information.part_number}
-product name:     {self._device_information.product_name}
-board name:       {self._device_information.board_name}
-            """
-        )
-        
-        self._configure_params = ConfigureParams.create_from_hef(
-            self._session,
-            interface=HailoStreamInterface.PCIe
-        )
-        
-        self._network_group = self._vdevice.configure(
-            self._session,
-            self._configure_params
-        )[0]
-        
-        self._network_group_params = self._network_group.create_params()
-
-        # Create input and output virtual streams params
-        self._input_vstreams_params = InputVStreamParams.make_from_network_group(
-            self._network_group,
-            quantized=False,
-            format_type=FormatType.UINT8
-        )
-        
-        self._vstreams = InputVStreams(
-            self._network_group,
-            self._input_vstreams_params
-        )
-        
-        self._output_vstreams_params = OutputVStreamParams.make_from_network_group(
-            self._network_group,
-            quantized=False,
-            format_type=FormatType.FLOAT32
-        )
-
         # Define dataset params
         self._input_vstream_info = self._session.get_input_vstream_infos()[0]
         self._output_vstream_info = self._session.get_output_vstream_infos()[0]
         
         self._input_name = self._input_vstream_info.name
+        self._input_type = self._input_vstream_info.format.type
+        
+        logger.debug(self._input_name)
+        logger.debug(self._input_type)
+        
+        self._output_name = self._output_vstream_info.name
+        self._output_type = self._output_vstream_info.format.type
+        
+        logger.debug(self._output_name)
+        logger.debug(self._output_type)
                 
         logger.debug(self._input_vstream_info)
         logger.debug(self._input_vstream_info.name)
@@ -111,10 +99,24 @@ board name:       {self._device_information.board_name}
         logger.debug(self._output_vstream_info.format)
         logger.debug(self._output_vstream_info.format.type)
         
+        logger.debug(self._configured_infer_model.get_async_queue_size())
+        
+        self._capacity = self._configured_infer_model.get_async_queue_size()
+        
+        # self._input_param = InputVStreamParams.make(
+        #     self._infer,
+        #     format_type=FormatType.UINT8,
+        # )
+        
+        # self._output_param = OutputVStreamParams.make(
+        #     self._infer,
+        #     format_type=FormatType.FLOAT32
+        # )
+        
         self._height, self._width, self._channels = self._input_vstream_info.shape
         
-        logger.debug(self._height)
-        logger.debug(self._width)
+        # logger.debug(self._height)
+        # logger.debug(self._width)
         
         self._information = ModelInformation(
             Path(hef_path).name,
@@ -123,6 +125,10 @@ board name:       {self._device_information.board_name}
             self._height,
         )
         
+    @property
+    def information(self) -> ModelInformation:
+        return self._information
+    
     @property
     def temperature(self) -> int:
         return int(self._device.control.get_chip_temperature().ts0_temperature)
@@ -226,42 +232,38 @@ board name:       {self._device_information.board_name}
             self._height
         )
         
-        # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
-        # data = numpy.array(image)
-        # data = numpy.transpose(data, (2, 0, 1))
         data = numpy.expand_dims(image, axis=0)
 
         return data.astype(numpy.uint8)
         
-    def inference(self, source: InferenceSource) -> InferenceResult:
-        input_data = self.preprocess_image(source.image)
+    def create_bindings(self, frame: numpy.typing.NDArray):
+        return self._configured_infer_model.create_bindings(
+            input_buffers={
+                self._input_name: frame,
+            },
+            output_buffers={
+                self._output_name: numpy.empty(
+                    shape=self._infer_model.output(self._output_name).shape,
+                    dtype=numpy.float32,
+                )
+            }
+        )
         
-        now = time.time()
-        output_data = None
-        with InferVStreams(
-            self._network_group,
-            self._input_vstreams_params,
-            self._output_vstreams_params
-        ) as infer_pipeline:
+    def callback(self, completion_info, bindings, source: InferenceSource):
+        
+        if completion_info.exception:
+            logger.error(f"inference error: {completion_info.exception}")
             
-            with self._network_group.activate(self._network_group_params):
-                output_data = infer_pipeline.infer({self._input_name: input_data})
-                
-        end = time.time()
-        spendtime = end - now
+        binding = bindings[0]
+
+        output = binding.output(self._output_name)
+        outputs = output.get_buffer()
         
-        if (not self.display):
-            return InferenceResult(source)
-        
-        key = list(output_data.keys())[0]
-        outputs = output_data[key][0]
         row = len(outputs)
-        
         boxes = []
         
         for i in range(row):
-            
+             
             if len(outputs[i]) <= 0:
                 continue
             
@@ -286,5 +288,43 @@ board name:       {self._device_information.board_name}
             box = boxes[i]
             utils.drawbox(source.image, box)
             utils.drawlabel(source.image, box)
+        
+        self._q_output.put(InferenceResult(source))
+        
+    def stop(self):
+        self._running = False
+        
+        self._configured_infer_model.wait_for_async_ready(
+            10 * 1000,
+            self._capacity,
+        )
+        
+        self.clear()
+        
+    def start(self):
+        self._running = True
+        
+        while self._running:
+            self._configured_infer_model.wait_for_async_ready(
+                10 * 1000,
+                self._capacity,
+            )
             
-        return InferenceResult(source)
+            source: InferenceSource = self._q_frame.get()
+            if source is None:
+                time.sleep(0.001)
+                continue
+            
+            source.timestamp = time.time()
+            
+            bindings = []
+            bindings.append(
+                self.create_bindings(
+                    self.preprocess_image(source.image)
+                )
+            )
+            
+            self._configured_infer_model.run_async(
+                bindings=bindings,
+                callback=partial(self.callback, bindings=bindings, source=source),
+            )

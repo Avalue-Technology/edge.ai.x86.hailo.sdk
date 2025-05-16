@@ -13,6 +13,8 @@ import numpy.typing
 import psutil
 import onnxruntime
 
+from sdk.data.inference_source import InferenceSource
+
 
 from ..commons import utils
 
@@ -31,11 +33,10 @@ class Onnxrt(Runtime):
     def __init__(
         self,
         onnx_path: str,
-        drawbbox: bool,
     ):
+        super().__init__()
 
         self._onnx_path = onnx_path
-        self._drawbbox = drawbbox
         
         self._session: onnxruntime.InferenceSession = onnxruntime.InferenceSession(self._onnx_path)
         
@@ -64,10 +65,6 @@ class Onnxrt(Runtime):
 			self._height,
 		)
         
-    @property
-    def information(self) -> ModelInformation:
-        return self._information
-    
     @property
     def temperature(self) -> int:
         coretemp = psutil.sensors_temperatures().get("coretemp")
@@ -216,30 +213,18 @@ class Onnxrt(Runtime):
         
         return data
         
-    def inference_image_84(
-        self,
-        source: cv2.typing.MatLike,
-        confidence: int,
-        threshold: int,
-    ) -> InferenceResult:
-        
-        image = source
-        input_data = self.preprocess_image(source)
+    def inference_image_84(self, source: InferenceSource) -> InferenceResult:
+        input_data = self.preprocess_image(source.image)
         
         now = time.time()
         output_data = self._session.run(None, {self._input.name: input_data})
-        cpu_usage = psutil.cpu_percent()
         end = time.time()
         spendtime = end - now
         
-        if (not self._drawbbox):
-            return InferenceResult(
-                spendtime,
-                cpu_usage,
-                image
-            )
+        if (not self.display):
+            return InferenceResult(source)
         
-        outputs = numpy.transpose(numpy.squeeze(output_data[0]))
+        outputs = numpy.transpose(numpy.squeeze(output_data[0])) # type: ignore
         rows = outputs.shape[0]
         boxes = []
 
@@ -248,88 +233,63 @@ class Onnxrt(Runtime):
             classes_scores = outputs[i][4:]
             max_score = numpy.amax(classes_scores)
             
-            if max_score >= (confidence / 100):
-                box = self.decode84(source, outputs[i])
+            if max_score >= (source.confidence / 100):
+                box = self.decode84(source.image, outputs[i])
                 boxes.append(box)
             
         indices = self.nmsboxes(
             boxes,
-            confidence,
-            threshold
+            source.confidence,
+            source.threshold
         )
         
         for i in indices:
             box = boxes[i]
-            utils.drawbox(image, box)
-            utils.drawlabel(image, box)
+            utils.drawbox(source.image, box)
+            utils.drawlabel(source.image, box)
             
-        return InferenceResult(
-            spendtime,
-            cpu_usage,
-            image,
-        )
+        return InferenceResult(source)
     
-    def inference_image_6(
-        self,
-        source: cv2.typing.MatLike,
-        confidence: int,
-        threshold: int,
-    ) -> InferenceResult:
-        
-        image = source
-        input_data = self.preprocess_image(image)
+    def inference_image_6(self, source: InferenceSource) -> InferenceResult:
+        input_data = self.preprocess_image(source.image)
         
         now = time.time()
         output_data = self._session.run(None, {self._input.name: input_data})
-        cpu_usage = psutil.cpu_percent()
         end = time.time()
         spendtime = end - now
         
-        if (not self._drawbbox):
-            return InferenceResult(
-                spendtime,
-                cpu_usage,
-                image
-            )
+        if (not self.display):
+            return InferenceResult(source)
 
-        outputs = numpy.squeeze(output_data[0])
+        outputs = numpy.squeeze(output_data[0]) # type: ignore
         rows = len(outputs)
         boxes = []
         
         for i in range(rows):
             score = outputs[i, -2]
-            if (score >= (confidence / 100.0)):
-                box = self.decode6(source, outputs[i])
+            if (score >= (source.confidence / 100.0)):
+                box = self.decode6(source.image, outputs[i])
                 boxes.append(box)
 
         indices = self.nmsboxes(
             boxes,
-            confidence,
-            threshold
+            source.confidence,
+            source.threshold
         )
         
         for i in indices:
             box = boxes[i]
-            utils.drawbox(image, box)
-            utils.drawlabel(image, box)
+            utils.drawbox(source.image, box)
+            utils.drawlabel(source.image, box)
         
-        return InferenceResult(
-            spendtime,
-            cpu_usage,
-            source,
-        )
+        return InferenceResult(source)
     
-    def inference(
-        self,
-        source: cv2.typing.MatLike,
-        confidence: int,
-        threshold: int,
-    ) -> InferenceResult:
+    def inference(self, source: InferenceSource) -> InferenceResult:
         
         if self._output.shape[1] == 84:  # YOLOv8-like
-            return self.inference_image_84(source, confidence, threshold)
+            return self.inference_image_84(source)
         
         elif self._output.shape[2] == 6: # YOLOv10-like
-            return self.inference_image_6(source, confidence, threshold)
+            return self.inference_image_6(source)
         
         raise NotImplementedError()

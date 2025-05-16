@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"}
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
+monitor_label_scale = 0.5
+MONITOR_LABEL_THICKNESS = 1
+
 def filextension(filepath: str) -> Tuple[bool, bool]:
     """
     returns: (
@@ -213,6 +216,110 @@ def drawlabel(
     )
     
     return image
+
+
+def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
+    image_height, image_width = image.shape[:2]
+    label: str = f"Model: {name}"
+    
+    (labelw, labelh), _ = cv2.getTextSize(
+        label,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        get_label_scale(image_width),
+        MONITOR_LABEL_THICKNESS,
+    )
+    
+    labelx = (image_width // 2) - (labelw // 2)
+    labely = image_height - labelh
+    
+    cv2.rectangle(
+        image,
+        (int(labelx), int(labely - labelh)),
+        (int(labelx + labelw), int(labely + labelh)),
+        (0, 255, 0),
+        cv2.FILLED
+    )
+    
+    cv2.putText(
+        image,
+        label,
+        (labelx, labely + (labelh // 2)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        get_label_scale(image_width),
+        (0, 0, 0),
+        MONITOR_LABEL_THICKNESS,
+        cv2.LINE_AA
+    )
+    
+    
+
+def drawspendtime(image: cv2.typing.MatLike, spendtime: float):
+    image_height, image_width = image.shape[:2]
+    
+    label: str = f"Latency: {int(spendtime * 1000)}ms"
+    
+    (labelw, labelh), _ = cv2.getTextSize(
+        label,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        get_label_scale(image_width),
+        MONITOR_LABEL_THICKNESS,
+    )
+    
+    labelx = 0
+    labely = image_height - labelh
+    
+    cv2.rectangle(
+        image,
+        (int(labelx), int(labely - labelh)),
+        (int(labelx + labelw), int(labely + labelh)),
+        (0, 255, 0),
+        cv2.FILLED
+    )
+    
+    cv2.putText(
+        image,
+        label,
+        (labelx, labely + (labelh // 2)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        get_label_scale(image_width),
+        (0, 0, 0),
+        MONITOR_LABEL_THICKNESS,
+        cv2.LINE_AA
+    )
+
+def drawfps(image: cv2.typing.MatLike, framecount: float):
+    image_height, image_width = image.shape[:2]
+    label: str = f"FPS: {framecount:.1f}"
+    
+    (labelw, labelh), _ = cv2.getTextSize(
+        label,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        get_label_scale(image_width),
+        MONITOR_LABEL_THICKNESS
+    )
+    
+    labelx = image_width - labelw
+    labely = image_height - labelh
+    
+    cv2.rectangle(
+        image,
+        (int(labelx), int(labely - labelh)),
+        (int(labelx + labelw), int(labely + labelh)),
+        (0, 255, 0),
+        cv2.FILLED
+    )
+    
+    cv2.putText(
+        image,
+        label,
+        (labelx, labely + (labelh // 2)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        get_label_scale(image_width),
+        (0, 0, 0),
+        MONITOR_LABEL_THICKNESS,
+        cv2.LINE_AA
+    )
+    
 
 def preprocess_image(
     image: cv2.typing.MatLike,
