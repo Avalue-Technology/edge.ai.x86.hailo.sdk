@@ -63,7 +63,7 @@ class HailortAsync(RuntimeAsync):
         self._vdevice_params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
         
         # hailo/hailort/hailort/libhailort/include/hailo/hailort.h:hailo_vdevice_params_t
-        # self._vdevice_params.multi_process_service = False
+        # self._vdevice_params.multi_process_service = True
         
         self._vdevice = VDevice(self._vdevice_params)
         
@@ -305,10 +305,7 @@ class HailortAsync(RuntimeAsync):
         self._running = True
         
         while self._running:
-            self._configured_infer_model.wait_for_async_ready(
-                10 * 1000,
-                self._capacity,
-            )
+            self._configured_infer_model.wait_for_async_ready()
             
             source: InferenceSource = self._q_frame.get()
             if source is None:

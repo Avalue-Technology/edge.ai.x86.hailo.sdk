@@ -60,7 +60,7 @@ class CircularBuffer():
                 return None
 
             result = self.buffer[self.read_index]
-            # logger.debug(f"read index: {self.read_index}")
+            # logger.debug(f"read[{self.read_index}] write[{self.write_index}]")
             
             self.__move_read_index__()
             self.isfull = False
