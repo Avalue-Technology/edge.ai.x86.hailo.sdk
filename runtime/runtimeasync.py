@@ -5,7 +5,7 @@ import logging
 
 import cv2
 
-from sdk.data.circular_buffer import CircularBuffer
+from sdk.data.circular_buffer import CircularBuffer, CircularSequence
 
 from .runtime import Runtime
 
@@ -22,8 +22,8 @@ class RuntimeAsync(Runtime):
         
         self._running: bool = False
         
-        self._q_frame = CircularBuffer(64)
-        self._q_output = CircularBuffer(512)
+        self._q_frame = CircularSequence(64)
+        self._q_result = CircularSequence(64)
     
     @property
     def running(self) -> bool:
@@ -35,16 +35,16 @@ class RuntimeAsync(Runtime):
         
     def clear(self) -> None:
         self._q_frame.clear()
-        self._q_output.clear()
+        self._q_result.clear()
     
     @abstractmethod
     def put(self, source: InferenceSource) -> None:
         # logger.debug(f"queue frame put: {source.timestamp}")
-        self._q_frame.put(source)
+        self._q_frame.put(source.timestamp, source)
     
     @abstractmethod
     def get(self) -> InferenceResult:
-        output: InferenceResult = self._q_output.get()
+        output: InferenceResult = self._q_result.get()
         if (output is None):
             return None
         

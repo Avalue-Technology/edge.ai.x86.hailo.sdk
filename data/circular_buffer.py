@@ -1,6 +1,7 @@
 
 from enum import Enum
-from typing import Any
+import heapq
+from typing import Any, List, Tuple
 
 import logging
 import threading
@@ -15,6 +16,47 @@ class CircularBufferMethod(Enum):
     
     LIFO = 1
     "Last in first out"
+    
+class CircularSequence():
+    
+    def __init__(
+        self,
+        size: int = 5,
+        method: CircularBufferMethod = CircularBufferMethod.FIFO,
+    ):
+        
+        self.size: int = size
+        self.method: CircularBufferMethod = method
+        
+        self.isfull = False
+        self.buffer: List[Tuple[float, Any]] = []
+        
+        self.lock = threading.Lock()
+        
+    def put(self, id: float, data: Any) -> int:
+        with self.lock:
+            
+            if len(self.buffer) >= self.size:
+                self.isfull = True
+                return self.size
+                
+            heapq.heappush(self.buffer, (id, data))
+            return len(self.buffer)
+        
+    def get(self) -> Any:
+        with self.lock:
+            if not self.buffer:
+                return None
+            
+            data = heapq.heappop(self.buffer)[1] # (data.id, data)
+            
+            if (len(self.buffer) < self.size):
+                self.isfull = False
+                
+            return data
+        
+    def clear(self) -> None:
+        self.buffer.clear()
 
 class CircularBuffer():
     def __init__(

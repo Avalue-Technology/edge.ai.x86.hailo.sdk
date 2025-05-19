@@ -1,33 +1,31 @@
 
-from asyncio import Queue
-import asyncio
-from dataclasses import dataclass
 from functools import partial
+
 import logging
-from multiprocessing import Process
 import threading
 import time
 
+from concurrent.futures import ThreadPoolExecutor
+
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import List, Sequence
 
 import numpy
 import numpy.typing
 
 import cv2
-import psutil
 
-from sdk.data.circular_buffer import CircularBuffer
-from sdk.data.inference_source import InferenceSource
-from sdk.runtime.runtimeasync import RuntimeAsync
+from sdk.data.circular_buffer import CircularSequence
+
 
 from ..commons import utils
+from ..runtime.runtimeasync import RuntimeAsync
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id
+from ..data.inference_source import InferenceSource
 from ..data.inference_result import InferenceResult
 from ..data.model_information import ModelInformation
 
-from .runtime import Runtime
 
 from hailo_platform import Device
 from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
@@ -67,7 +65,7 @@ class HailortAsync(RuntimeAsync):
         
         self._vdevice = VDevice(self._vdevice_params)
         
-        self._infer_model = self._vdevice.create_infer_model(hef_path)
+        self._infer_model = self._vdevice.create_infer_model(hef_path, self._session.get_network_group_names()[0])
         self._configured_infer_model = self._infer_model.configure()
         
         self._device = Device()
@@ -124,6 +122,9 @@ class HailortAsync(RuntimeAsync):
             self._width,
             self._height,
         )
+        
+        self._running = False
+    
         
     @property
     def information(self) -> ModelInformation:
@@ -249,13 +250,23 @@ class HailortAsync(RuntimeAsync):
             }
         )
         
-    def callback(self, completion_info, bindings, source: InferenceSource):
-        
+    def callback(self, completion_info, bindings, source: InferenceSource, pool: ThreadPoolExecutor):
         if completion_info.exception:
             logger.error(f"inference error: {completion_info.exception}")
             
+        try:
+            pool.submit(
+                self.task_postprocess,
+                bindings,
+                source,
+            )
+            
+        except Exception as e:
+            logger.error(e)
+            pass
+            
+    def task_postprocess(self, bindings, source: InferenceSource) -> None:
         binding = bindings[0]
-
         output = binding.output(self._output_name)
         outputs = output.get_buffer()
         
@@ -284,12 +295,46 @@ class HailortAsync(RuntimeAsync):
             source.threshold
         )
         
-        for i in indices:
-            box = boxes[i]
-            utils.drawbox(source.image, box)
-            utils.drawlabel(source.image, box)
+        if (self.display):
+            for i in indices:
+                box = boxes[i]
+                utils.drawbox(source.image, box)
+                utils.drawlabel(source.image, box)
+            
+            utils.drawmodelname(source.image, self.information.name)
+            utils.drawlatency(source.image, self.spendtime)
+            utils.drawfps(source.image, self.fps)
+            
         
-        self._q_output.put(InferenceResult(source))
+        self._q_result.put(source.timestamp, InferenceResult(source))
+        
+    def task_perprocess(self, source: InferenceSource, queue: CircularSequence) -> None:
+        bindings = []
+        bindings.append(
+            self.create_bindings(
+                self.preprocess_image(source.image)
+            )
+        )
+        
+        queue.put(source.timestamp, (bindings, source))
+    
+    def task_grabimage(self, pool: ThreadPoolExecutor, queue: CircularSequence) -> None:
+        while self._running:
+            
+            source: InferenceSource = self._q_frame.get()
+            if source is None:
+                time.sleep(0.001)
+                continue
+            
+            try:
+                pool.submit(
+                    self.task_perprocess,
+                    source,
+                    queue,
+                )
+            
+            except Exception as e:
+                logger.error(e)
         
     def stop(self):
         self._running = False
@@ -304,24 +349,41 @@ class HailortAsync(RuntimeAsync):
     def start(self):
         self._running = True
         
+        binding_queue = CircularSequence(16)
+        input_pool = ThreadPoolExecutor(16)
+        output_pool = ThreadPoolExecutor(16)
+
+        t_grabimage = threading.Thread(
+            target=self.task_grabimage,
+            args=(input_pool, binding_queue),
+            daemon=True
+        )
+        
+        t_grabimage.start()
+        
         while self._running:
-            self._configured_infer_model.wait_for_async_ready()
             
-            source: InferenceSource = self._q_frame.get()
-            if source is None:
+            buffer = binding_queue.get()
+            if buffer is None:
                 time.sleep(0.001)
                 continue
-            
+                
+            bindings = buffer[0]
+            source: InferenceSource = buffer[1]
             source.timestamp = time.time()
-            
-            bindings = []
-            bindings.append(
-                self.create_bindings(
-                    self.preprocess_image(source.image)
-                )
-            )
-            
+
+            self._configured_infer_model.wait_for_async_ready()
             self._configured_infer_model.run_async(
                 bindings=bindings,
-                callback=partial(self.callback, bindings=bindings, source=source),
+                callback=partial(
+                    self.callback,
+                    bindings=bindings,
+                    source=source,
+                    pool=output_pool
+                ),
             )
+        
+        binding_queue.clear()
+        t_grabimage.join(1)
+        input_pool.shutdown(False, cancel_futures=True)
+        output_pool.shutdown(False, cancel_futures=True)

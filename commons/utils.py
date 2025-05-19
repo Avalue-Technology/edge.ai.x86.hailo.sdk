@@ -181,7 +181,11 @@ def drawlabel(
     
     left, top = box.lefttop()
     labelx = left
-    labely = top - 10 if top - 10 > labelh else top + 10
+    labely = (
+        top - (labelh) 
+        if top - (labelh) > 0
+        else 0
+    )
     
     if (labelx + labelw > shape_width):
         labelx = shape_width - labelw
@@ -253,7 +257,7 @@ def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
     
     
 
-def drawspendtime(image: cv2.typing.MatLike, spendtime: float):
+def drawlatency(image: cv2.typing.MatLike, spendtime: float):
     image_height, image_width = image.shape[:2]
     
     label: str = f"Latency: {int(spendtime * 1000)}ms"

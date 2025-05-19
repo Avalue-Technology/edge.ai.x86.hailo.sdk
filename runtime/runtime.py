@@ -15,6 +15,9 @@ class Runtime():
         self._information: ModelInformation = ModelInformation("undefined", "undefined", 0, 0)
         self._temperature: int = 0
         self._display: bool = False
+        
+        self._spendtime = 0.0
+        self._fps = 0.0
     
     @property
     def information(self) -> ModelInformation:
@@ -35,6 +38,22 @@ class Runtime():
     @display.setter
     def display(self, display: bool) -> None:
         self._display = display
+    
+    @property
+    def spendtime(self) -> float:
+        return self._spendtime
+    
+    @spendtime.setter
+    def spendtime(self, spendtime: float) -> None:
+        self._spendtime = spendtime
+        
+    @property
+    def fps(self) -> float:
+        return self._fps
+    
+    @fps.setter
+    def fps(self, fps: float):
+        self._fps = fps
     
     @abstractmethod
     def inference(self, source: InferenceSource) -> InferenceResult:

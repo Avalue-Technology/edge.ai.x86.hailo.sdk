@@ -27,8 +27,10 @@ class Monitor():
         
         self._framecount = 0
         self._framecounts: Deque[int] = deque([0], maxlen=60)
-        
         self._spendtimes:Deque[float] = deque([0.0], maxlen=60)
+        
+        self._fps = 0.0
+        self._latency = 0.0
         
         self._task = None
     
@@ -40,17 +42,21 @@ class Monitor():
     def get_information(self) -> ModelInformation:
         return ModelInformation("none", "none", 0, 0)
 
-    def task_framecount_reset(self) -> None:
+    def task_monitor(self) -> None:
         
         info = self.get_information()
         
         while(True):
             self._times += 1
             
-            if (self.framecount > 0 and self.spandtime > 0):
-                maxfps = round(1 / self.spandtime, 1)
-                latency = int(self.spandtime * 1000)
-                logger.info(f"{self._modelname}[{self._frametotal:09d}|{self._times}] fps: {self.framecount:.1f} [{maxfps}/{latency}ms] tempature[{info.device}]: {self.get_temperature()}")
+            if (
+                len(self._framecounts) > 0
+                and len(self._spendtimes) > 0
+            ):
+                self._fps = float(numpy.mean(numpy.array(self._framecounts)))
+                self._latency = float(numpy.mean(numpy.array(self._spendtimes)))
+                logger.info(f"{self._modelname}[{self._frametotal:09d}|{self._times}] fps: {self._fps:.1f}({round(self._latency * 1000)}ms) tempature[{info.device}]: {self.get_temperature()}")
+                
                 
             self._framecounts.append(self._framecount)
             self._framecount = 0
@@ -65,7 +71,7 @@ class Monitor():
         
     def start(self) -> None:
         if (self._task is None):
-            self._task = threading.Thread(target=self.task_framecount_reset, daemon=True)
+            self._task = threading.Thread(target=self.task_monitor, daemon=True)
             
         self._task.start()
         
@@ -74,9 +80,9 @@ class Monitor():
             self._task.join(1)
         
     @property
-    def framecount(self):
-        return float(numpy.mean(numpy.array(self._framecounts)))
+    def fps(self) -> float:
+        return self._fps
     
     @property
-    def spandtime(self) -> float:
-        return float(numpy.mean(numpy.array(self._spendtimes)))
+    def latency(self) -> float:
+        return self._latency
