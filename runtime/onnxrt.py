@@ -17,6 +17,7 @@ from sdk.data.inference_source import InferenceSource
 
 
 from ..commons import utils
+from ..commons.monitor import Monitor
 
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id
@@ -32,9 +33,10 @@ class Onnxrt(Runtime):
     
     def __init__(
         self,
+        monitor: Monitor,
         onnx_path: str,
     ):
-        super().__init__()
+        super().__init__(monitor)
 
         self._onnx_path = onnx_path
         

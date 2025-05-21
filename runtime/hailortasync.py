@@ -15,11 +15,12 @@ import numpy.typing
 
 import cv2
 
-from sdk.data.circular_buffer import CircularSequence
-
-
 from ..commons import utils
+from ..commons.monitor import Monitor
+
 from ..runtime.runtimeasync import RuntimeAsync
+
+from ..data.circular_buffer import CircularSequence
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id
 from ..data.inference_source import InferenceSource
@@ -47,9 +48,10 @@ class HailortAsync(RuntimeAsync):
     
     def __init__(
         self,
+        monitor: Monitor,
         hef_path: str,
     ):
-        super().__init__()
+        super().__init__(monitor)
         
         self._hef_path = hef_path
         
@@ -300,11 +302,6 @@ class HailortAsync(RuntimeAsync):
                 box = boxes[i]
                 utils.drawbox(source.image, box)
                 utils.drawlabel(source.image, box)
-            
-            utils.drawmodelname(source.image, self.information.name)
-            utils.drawlatency(source.image, self.spendtime)
-            utils.drawfps(source.image, self.fps)
-            
         
         self._q_result.put(source.timestamp, InferenceResult(source))
         
@@ -346,7 +343,7 @@ class HailortAsync(RuntimeAsync):
         
         self.clear()
         
-    def start(self):
+    def run(self):
         self._running = True
         
         binding_queue = CircularSequence(16)
@@ -372,7 +369,10 @@ class HailortAsync(RuntimeAsync):
             source: InferenceSource = buffer[1]
             source.timestamp = time.time()
 
-            self._configured_infer_model.wait_for_async_ready()
+            self._configured_infer_model.wait_for_async_ready(
+                10 * 1000,
+                1,
+            )
             self._configured_infer_model.run_async(
                 bindings=bindings,
                 callback=partial(

@@ -8,6 +8,7 @@ import cv2
 from sdk.data.circular_buffer import CircularBuffer, CircularSequence
 
 from .runtime import Runtime
+from ..commons.monitor import Monitor
 
 from ..data.inference_source import InferenceSource
 from ..data.inference_result import InferenceResult
@@ -17,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 class RuntimeAsync(Runtime):
     
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, monitor: Monitor) -> None:
+        super().__init__(monitor)
         
         self._running: bool = False
         
@@ -60,6 +61,6 @@ class RuntimeAsync(Runtime):
         pass
     
     @abstractmethod
-    def start(self) -> None:
+    def run(self) -> None:
         pass
     

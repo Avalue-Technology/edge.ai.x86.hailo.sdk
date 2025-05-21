@@ -14,6 +14,7 @@ import psutil
 from sdk.data.inference_source import InferenceSource
 
 from ..commons import utils
+from ..commons.monitor import Monitor
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id
 from ..data.inference_result import InferenceResult
@@ -42,9 +43,10 @@ class Hailort(Runtime):
     
     def __init__(
         self,
+        monitor: Monitor,
         hef_path: str,
     ):
-        super().__init__()
+        super().__init__(monitor)
         
         self._hef_path = hef_path
         

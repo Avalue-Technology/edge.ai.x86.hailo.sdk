@@ -22,13 +22,10 @@ class Monitor():
         self._modelname = modelname
         
         self._times = 0
-
         self._frametotal = 0
-        
         self._framecount = 0
         self._framecounts: Deque[int] = deque([0], maxlen=60)
-        self._spendtimes:Deque[float] = deque([0.0], maxlen=60)
-        
+        self._spendtimes: Deque[float] = deque([0.0], maxlen=60)
         self._fps = 0.0
         self._latency = 0.0
         
@@ -68,6 +65,15 @@ class Monitor():
         
     def add_spendtime(self, spendtime: float) -> None:
         self._spendtimes.append(spendtime)
+        
+    def reset(self) -> None:
+        self._times = 0
+        self._frametotal = 0
+        self._framecount = 0
+        self._framecounts.clear()
+        self._spendtimes.clear()
+        self._fps = 0.0
+        self._latency = 0.0
         
     def start(self) -> None:
         if (self._task is None):

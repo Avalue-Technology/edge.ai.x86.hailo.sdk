@@ -13,13 +13,13 @@ import numpy.typing
 import psutil
 import tflite_runtime.interpreter as tflite
 
-from sdk.data.inference_source import InferenceSource
-
 from ..commons import utils
+from ..commons.monitor import Monitor
 
 from ..data.bounding_box import BoundingBox
 from ..data.coco_90 import find_class_id
 from ..data.inference_result import InferenceResult
+from ..data.inference_source import InferenceSource
 from ..data.model_information import ModelInformation
 
 from .runtime import Runtime
@@ -30,9 +30,10 @@ class Tflitert(Runtime):
 
     def __init__(
         self,
+        monitor: Monitor,
         tflite_path: str,
     ):
-        super().__init__()
+        super().__init__(monitor)
         
         self._tflite_path = tflite_path
         

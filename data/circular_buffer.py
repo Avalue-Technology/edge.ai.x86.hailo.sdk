@@ -56,7 +56,8 @@ class CircularSequence():
             return data
         
     def clear(self) -> None:
-        self.buffer.clear()
+        with self.lock:
+            self.buffer.clear()
 
 class CircularBuffer():
     def __init__(
