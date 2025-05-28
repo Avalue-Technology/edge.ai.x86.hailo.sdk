@@ -2,14 +2,15 @@
 from abc import ABC, abstractmethod
 
 import logging
+import threading
 
 import cv2
 
-from sdk.data.circular_buffer import CircularBuffer, CircularSequence
 
 from .runtime import Runtime
 from ..commons.monitor import Monitor
 
+from ..data.circular_buffer import CircularBuffer
 from ..data.inference_source import InferenceSource
 from ..data.inference_result import InferenceResult
 from ..data.model_information import ModelInformation
@@ -18,21 +19,32 @@ logger = logging.getLogger(__name__)
 
 class RuntimeAsync(Runtime):
     
-    def __init__(self, monitor: Monitor) -> None:
-        super().__init__(monitor)
+    def __init__(self, size = 64) -> None:
+        super().__init__()
         
-        self._running: bool = False
+        self._running: threading.Event = threading.Event()
+        self._size = size
         
-        self._q_frame = CircularSequence(64)
-        self._q_result = CircularSequence(64)
+        self._q_frame = CircularBuffer(size)
+        self._q_result = CircularBuffer(size)
     
     @property
-    def running(self) -> bool:
+    def running(self) -> threading.Event:
         return self._running
+        
+    @property
+    def size(self) -> int:
+        return self._size
     
-    @running.setter
-    def running(self, running: bool) -> None:
-        self._running = running
+    @size.setter
+    def size(self, size: int) -> None:
+        self._size = size
+        self._q_frame = CircularBuffer(size)
+        self._q_result = CircularBuffer(size)
+        
+    @property
+    def avaliable(self) -> bool:
+        return self._q_frame.avaliable
         
     def clear(self) -> None:
         self._q_frame.clear()
@@ -40,21 +52,11 @@ class RuntimeAsync(Runtime):
     
     @abstractmethod
     def put(self, source: InferenceSource) -> None:
-        # logger.debug(f"queue frame put: {source.timestamp}")
-        self._q_frame.put(source.timestamp, source)
+        self._q_frame.put(source)
     
     @abstractmethod
     def get(self) -> InferenceResult:
-        output: InferenceResult = self._q_result.get()
-        if (output is None):
-            return None
-        
-        # logger.debug(f"queue output get: {output.timestamp}[{output.spendtime}]")
-        return output
-    
-    @abstractmethod
-    def avaliable(self) -> bool:
-        return not self._q_frame.isfull
+        return self._q_result.get()
     
     @abstractmethod
     def stop(self) -> None:

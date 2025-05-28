@@ -39,14 +39,14 @@ from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
 
 logger = logging.getLogger(__name__)
 
+@DeprecationWarning
 class Hailort(Runtime):
     
     def __init__(
         self,
-        monitor: Monitor,
         hef_path: str,
     ):
-        super().__init__(monitor)
+        super().__init__()
         
         self._hef_path = hef_path
         
@@ -217,12 +217,12 @@ board name:       {self._device_information.board_name}
         return box
     
     
-    def preprocess_image(
+    def preprocess(
         self,
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
         
-        image = utils.preprocess_image(
+        image = utils.reshape(
             source,
             self._width,
             self._height
@@ -237,7 +237,7 @@ board name:       {self._device_information.board_name}
         return data.astype(numpy.uint8)
         
     def inference(self, source: InferenceSource) -> InferenceResult:
-        input_data = self.preprocess_image(source.image)
+        input_data = self.preprocess(source.image)
         
         now = time.time()
         output_data = None

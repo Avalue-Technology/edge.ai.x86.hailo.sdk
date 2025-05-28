@@ -260,7 +260,7 @@ def drawmodelname(image: cv2.typing.MatLike, name: str) -> None:
 def drawlatency(image: cv2.typing.MatLike, spendtime: float):
     image_height, image_width = image.shape[:2]
     
-    label: str = f"Latency: {int(spendtime * 1000)}ms"
+    label: str = f"Latency: {int(spendtime * 1000):2d}ms"
     
     (labelw, labelh), _ = cv2.getTextSize(
         label,
@@ -357,13 +357,19 @@ def drawsize(image: cv2.typing.MatLike, width: int, height: int):
         cv2.LINE_AA
     )
 
-def preprocess_image(
+def reshape(
     image: cv2.typing.MatLike,
     model_width: int,
     model_height: int,
 ) -> cv2.typing.MatLike:
     
     shape_height, shape_width = image.shape[:2]
+    
+    if (
+        shape_width == model_width
+        and shape_height == model_height
+    ):
+        return image
     
     new_ratio: float = get_ratio(
         shape_width,

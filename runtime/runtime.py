@@ -12,13 +12,19 @@ from ..data.model_information import ModelInformation
 
 class Runtime():
     
-    def __init__(self, monitor: Monitor) -> None:
+    def __init__(self) -> None:
         self._information: ModelInformation = ModelInformation("undefined", "undefined", 0, 0)
         self._temperature: int = 0
         self._display: bool = False
         self._spendtime = 0.0
         self._fps = 0.0
         
+    @property
+    def monitor(self) -> Monitor:
+        return self._monitor
+    
+    @monitor.setter
+    def monitor(self, monitor: Monitor) -> None:
         self._monitor = monitor
         self._monitor.get_temperature = lambda : self.temperature
         self._monitor.get_information = lambda : self.information

@@ -1,6 +1,7 @@
 
 
 
+import sys
 import threading
 import time
 import logging
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class Monitor():
     
-    def __init__(self, modelname: str):
+    def __init__(self, modelname: str = "dryrun"):
         
         self._modelname = modelname
         
@@ -29,7 +30,7 @@ class Monitor():
         self._fps = 0.0
         self._latency = 0.0
         
-        self._task = None
+        self._monitor = None
     
     @abstractmethod
     def get_temperature(self) -> int:
@@ -39,10 +40,10 @@ class Monitor():
     def get_information(self) -> ModelInformation:
         return ModelInformation("none", "none", 0, 0)
 
-    def task_monitor(self) -> None:
+    def __task_monitor__(self) -> None:
         
         info = self.get_information()
-        
+        err = 0
         while(True):
             self._times += 1
             
@@ -52,12 +53,29 @@ class Monitor():
             ):
                 self._fps = float(numpy.mean(numpy.array(self._framecounts)))
                 self._latency = float(numpy.mean(numpy.array(self._spendtimes)))
-                logger.info(f"{self._modelname}[{self._frametotal:09d}|{self._times}] fps: {self._fps:.1f}({round(self._latency * 1000)}ms) tempature[{info.device}]: {self.get_temperature()}")
+                logger.info(f"{self._modelname}[{self._frametotal:09d}|{self._times}|{err}] fps: {self._fps:.1f}({round(self._latency * 1000)}ms) tempature[{info.device}]: {self.get_temperature()}")
                 
                 
             self._framecounts.append(self._framecount)
             self._framecount = 0
+            
+            if (self._fps == 0):
+                err += 1
+                
+            else:
+                err = 0
+                
+            if (err > 10):
+                break
+            
             time.sleep(1)
+            
+
+        for thread in threading.enumerate():
+            logger.debug(f"Thread name: {thread.name}, ID: {thread.ident}, Alive: {thread.is_alive()}, Daemon: {thread.daemon}")
+
+            
+        logger.error(f"montir terminate on error {err}")
             
     def add_count(self) -> None:
         self._frametotal += 1
@@ -76,14 +94,16 @@ class Monitor():
         self._latency = 0.0
         
     def start(self) -> None:
-        if (self._task is None):
-            self._task = threading.Thread(target=self.task_monitor, daemon=True)
+        if (self._monitor is None):
+            self._monitor = threading.Thread(target=self.__task_monitor__, daemon=True)
             
-        self._task.start()
+        self._monitor.start()
         
     def stop(self) -> None:
-        if (self._task is not None):
-            self._task.join(1)
+        if (self._monitor is not None):
+            self._monitor.join(1)
+        
+        self._monitor = None
         
     @property
     def fps(self) -> float:

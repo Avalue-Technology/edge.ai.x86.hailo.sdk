@@ -33,10 +33,9 @@ class Onnxrt(Runtime):
     
     def __init__(
         self,
-        monitor: Monitor,
         onnx_path: str,
     ):
-        super().__init__(monitor)
+        super().__init__()
 
         self._onnx_path = onnx_path
         
@@ -192,12 +191,12 @@ class Onnxrt(Runtime):
         
         return box
         
-    def preprocess_image(
+    def preprocess(
         self,
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
         
-        image = utils.preprocess_image(
+        image = utils.reshape(
             source,
             self._width,
             self._height
@@ -216,7 +215,7 @@ class Onnxrt(Runtime):
         return data
         
     def inference_image_84(self, source: InferenceSource) -> InferenceResult:
-        input_data = self.preprocess_image(source.image)
+        input_data = self.preprocess(source.image)
         
         now = time.time()
         output_data = self._session.run(None, {self._input.name: input_data})
@@ -253,7 +252,7 @@ class Onnxrt(Runtime):
         return InferenceResult(source)
     
     def inference_image_6(self, source: InferenceSource) -> InferenceResult:
-        input_data = self.preprocess_image(source.image)
+        input_data = self.preprocess(source.image)
         
         now = time.time()
         output_data = self._session.run(None, {self._input.name: input_data})

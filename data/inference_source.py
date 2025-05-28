@@ -19,6 +19,10 @@ class InferenceSource():
     def image(self) -> cv2.typing.MatLike:
         return self._image
     
+    @image.setter
+    def image(self, image: cv2.typing.MatLike):
+        self._image = image
+    
     @property
     def confidence(self) -> int:
         return self._confidence

@@ -30,10 +30,9 @@ class Tflitert(Runtime):
 
     def __init__(
         self,
-        monitor: Monitor,
         tflite_path: str,
     ):
-        super().__init__(monitor)
+        super().__init__()
         
         self._tflite_path = tflite_path
         
@@ -113,12 +112,12 @@ class Tflitert(Runtime):
         return box
         
     
-    def preprocess_image(
+    def preprocess(
         self,
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
         
-        image = utils.preprocess_image(
+        image = utils.reshape(
             source,
             self._width,
             self._height
@@ -132,7 +131,7 @@ class Tflitert(Runtime):
     
     
     def inference(self, source: InferenceSource) -> InferenceResult:
-        input_data = self.preprocess_image(source.image)
+        input_data = self.preprocess(source.image)
         
         now = time.time()
         self._session.set_tensor(self._input.get("index"), input_data)

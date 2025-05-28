@@ -8,7 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 import numpy
 import numpy.typing
@@ -20,7 +20,7 @@ from ..commons.monitor import Monitor
 
 from ..runtime.runtimeasync import RuntimeAsync
 
-from ..data.circular_buffer import CircularSequence
+from ..data.circular_buffer import CircularBuffer
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id
 from ..data.inference_source import InferenceSource
@@ -48,10 +48,9 @@ class HailortAsync(RuntimeAsync):
     
     def __init__(
         self,
-        monitor: Monitor,
         hef_path: str,
     ):
-        super().__init__(monitor)
+        super().__init__()
         
         self._hef_path = hef_path
         
@@ -101,7 +100,7 @@ class HailortAsync(RuntimeAsync):
         
         logger.debug(self._configured_infer_model.get_async_queue_size())
         
-        self._capacity = self._configured_infer_model.get_async_queue_size()
+        self._capacity: int = self._configured_infer_model.get_async_queue_size()
         
         # self._input_param = InputVStreamParams.make(
         #     self._infer,
@@ -125,7 +124,7 @@ class HailortAsync(RuntimeAsync):
             self._height,
         )
         
-        self._running = False
+        self._running = threading.Event()
     
         
     @property
@@ -224,12 +223,12 @@ class HailortAsync(RuntimeAsync):
         return box
     
     
-    def preprocess_image(
+    def preprocess(
         self,
         source: cv2.typing.MatLike,
     ) -> numpy.typing.NDArray:
         
-        image = utils.preprocess_image(
+        image = utils.reshape(
             source,
             self._width,
             self._height
@@ -238,36 +237,9 @@ class HailortAsync(RuntimeAsync):
         data = numpy.expand_dims(image, axis=0)
 
         return data.astype(numpy.uint8)
-        
-    def create_bindings(self, frame: numpy.typing.NDArray):
-        return self._configured_infer_model.create_bindings(
-            input_buffers={
-                self._input_name: frame,
-            },
-            output_buffers={
-                self._output_name: numpy.empty(
-                    shape=self._infer_model.output(self._output_name).shape,
-                    dtype=numpy.float32,
-                )
-            }
-        )
-        
-    def callback(self, completion_info, bindings, source: InferenceSource, pool: ThreadPoolExecutor):
-        if completion_info.exception:
-            logger.error(f"inference error: {completion_info.exception}")
-            
-        try:
-            pool.submit(
-                self.task_postprocess,
-                bindings,
-                source,
-            )
-            
-        except Exception as e:
-            logger.error(e)
-            pass
-            
-    def task_postprocess(self, bindings, source: InferenceSource) -> None:
+
+    def postprocess(self, bindings, source: InferenceSource) -> InferenceSource:
+        image = source.image
         binding = bindings[0]
         output = binding.output(self._output_name)
         outputs = output.get_buffer()
@@ -286,7 +258,7 @@ class HailortAsync(RuntimeAsync):
 
                 if score >= (source.confidence / 100):
                     box = self.decode6(
-                        source.image, 
+                        image,
                         [x1, y1, x2, y2, score, i]
                     )
                     boxes.append(box)
@@ -300,90 +272,86 @@ class HailortAsync(RuntimeAsync):
         if (self.display):
             for i in indices:
                 box = boxes[i]
-                utils.drawbox(source.image, box)
-                utils.drawlabel(source.image, box)
+                utils.drawbox(image, box)
+                utils.drawlabel(image, box)
         
-        self._q_result.put(source.timestamp, InferenceResult(source))
+        source.image = image
+        return source
         
-    def task_perprocess(self, source: InferenceSource, queue: CircularSequence) -> None:
-        bindings = []
-        bindings.append(
-            self.create_bindings(
-                self.preprocess_image(source.image)
-            )
-        )
         
-        queue.put(source.timestamp, (bindings, source))
-    
-    def task_grabimage(self, pool: ThreadPoolExecutor, queue: CircularSequence) -> None:
-        while self._running:
-            
-            source: InferenceSource = self._q_frame.get()
-            if source is None:
-                time.sleep(0.001)
-                continue
-            
-            try:
-                pool.submit(
-                    self.task_perprocess,
-                    source,
-                    queue,
+    def create_bindings(self, frame: numpy.typing.NDArray):
+        return self._configured_infer_model.create_bindings(
+            input_buffers={
+                self._input_name: frame,
+            },
+            output_buffers={
+                self._output_name: numpy.empty(
+                    shape=self._infer_model.output(self._output_name).shape,
+                    dtype=numpy.float32,
                 )
-            
-            except Exception as e:
-                logger.error(e)
-        
-    def stop(self):
-        self._running = False
-        
-        self._configured_infer_model.wait_for_async_ready(
-            10 * 1000,
-            self._capacity,
+            }
         )
         
+    def callback(self, completion_info, bindings, source: InferenceSource) -> None:
+        if completion_info.exception:
+            logger.error(f"inference error: {completion_info.exception}")
+            
+        try:
+            source = self.postprocess(bindings, source)
+            self._q_result.put(InferenceResult(source))
+                
+        except Exception as e:
+            # logger.error(e)
+            pass
+            
+    def stop(self) -> None:
+        self._running.clear()
         self.clear()
         
-    def run(self):
-        self._running = True
-        
-        binding_queue = CircularSequence(16)
-        input_pool = ThreadPoolExecutor(16)
-        output_pool = ThreadPoolExecutor(16)
-
-        t_grabimage = threading.Thread(
-            target=self.task_grabimage,
-            args=(input_pool, binding_queue),
-            daemon=True
+        self._configured_infer_model.wait_for_async_ready(
+            timeout_ms=10000,
+            frames_count=self._capacity
         )
         
-        t_grabimage.start()
+    def run(self):
+        self._running.set()
+                
+        logger.debug(f"start grab image")
         
-        while self._running:
+        while self._running.is_set():
             
-            buffer = binding_queue.get()
-            if buffer is None:
+            source: InferenceSource = self._q_frame.get()
+            if source is None or source.image is None:
                 time.sleep(0.001)
                 continue
+            
+            bindings = []
+            bindings.append(
+                self.create_bindings(
+                    self.preprocess(source.image)
+                )
+            )
                 
-            bindings = buffer[0]
-            source: InferenceSource = buffer[1]
             source.timestamp = time.time()
 
-            self._configured_infer_model.wait_for_async_ready(
-                10 * 1000,
-                1,
-            )
-            self._configured_infer_model.run_async(
-                bindings=bindings,
-                callback=partial(
-                    self.callback,
+            try:
+                self._configured_infer_model.wait_for_async_ready(
+                    10 * 1000,
+                    1,
+                )
+                
+                self._configured_infer_model.run_async(
                     bindings=bindings,
-                    source=source,
-                    pool=output_pool
-                ),
-            )
+                    callback=partial(
+                        self.callback,
+                        bindings=bindings,
+                        source=source,
+                    ),
+                )
+                
+            except Exception as e:
+                logger.error(e)
+                pass
         
-        binding_queue.clear()
-        t_grabimage.join(1)
-        input_pool.shutdown(False, cancel_futures=True)
-        output_pool.shutdown(False, cancel_futures=True)
+        self._running.clear()
+        self.clear()
