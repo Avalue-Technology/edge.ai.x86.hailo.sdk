@@ -79,9 +79,9 @@ class CircularBuffer():
         return result
     
     @property
-    def avaliable(self) -> bool:
+    def avaliable(self) -> int:
         with self._lock:
-            return not self._isfull
+            return ((self._read_index + self._write_index) % self._size) + 1
     
     def put(self, data: Any) -> int:
         with self._lock:

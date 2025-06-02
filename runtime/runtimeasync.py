@@ -43,7 +43,7 @@ class RuntimeAsync(Runtime):
         self._q_result = CircularBuffer(size)
         
     @property
-    def avaliable(self) -> bool:
+    def avaliable(self) -> int:
         return self._q_frame.avaliable
         
     def clear(self) -> None:
