@@ -1,11 +1,13 @@
 
-
-
 import sys
 import threading
 import time
 import logging
+import traceback
 import numpy
+import gc
+
+from pympler import summary, muppy, asizeof
 
 from abc import abstractmethod
 from collections import deque
@@ -31,6 +33,9 @@ class Monitor():
         self._latency = 0.0
         
         self._monitor = None
+        self._monitor_event = threading.Event()
+        
+        self._topn = 10
     
     @abstractmethod
     def get_temperature(self) -> int:
@@ -39,12 +44,53 @@ class Monitor():
     @abstractmethod
     def get_information(self) -> ModelInformation:
         return ModelInformation("none", "none", 0, 0)
+    
+    def _dump_summary(self):
+        all_objects = muppy.get_objects()
+        total_str = sum(1 for o in all_objects if isinstance(o, str))
+        total_list = sum(1 for o in all_objects if isinstance(o, list))
+        logger.info(f"[MemoryWatchdog] total str: {total_str}, total list: {total_list}")
+
+    def _dump_top_str(self):
+        str_objects = [o for o in muppy.get_objects() if isinstance(o, str)]
+        sorted_strs = sorted(str_objects, key=asizeof.asizeof, reverse=True)[:self._topn]
+        logger.info(f"[MemoryWatchdog] Top {self._topn} largest str:")
+        for i, s in enumerate(sorted_strs):
+            try:
+                logger.debug(f"[{i}] size={asizeof.asizeof(s)/1024:.2f} KB, len={len(s)}, content={repr(s[:100])}")
+            except Exception:
+                pass
+
+    def _dump_top_list(self):
+        list_objects = [o for o in muppy.get_objects() if isinstance(o, list)]
+        sorted_lists = sorted(list_objects, key=asizeof.asizeof, reverse=True)[:self._topn]
+        logger.info(f"[MemoryWatchdog] Top {self._topn} largest list:")
+        for i, lst in enumerate(sorted_lists):
+            try:
+                logger.debug(f"[{i}] size={asizeof.asizeof(lst)/1024:.2f} KB, len={len(lst)}")
+                if len(lst) > 0:
+                    logger.debug(f"    id: {id(lst)}, type: {type(lst)}")
+                    logger.debug(f"    items: {[repr(x)[:40] for x in lst[:20]]}")
+                    
+                    refs = gc.get_referrers(lst)
+                    for r in refs[:10]:
+                        logger.debug(f"        ref by: {type(r)}, preview: {repr(r)[:100]}")
+                        try:
+                            if isinstance(r, dict) and '__module__' in r:
+                                logger.debug(f"            ref by module: {r['__module__']}")
+                            elif isinstance(r, (list, tuple, set, dict)):
+                                for stack in traceback.extract_stack():
+                                    logger.debug(f"            {stack}")
+                        except:
+                            pass
+            except Exception:
+                pass
 
     def __task_monitor__(self) -> None:
         
         info = self.get_information()
         err = 0
-        while(True):
+        while(self._monitor_event.is_set()):
             self._times += 1
             
             if (
@@ -76,6 +122,10 @@ class Monitor():
 
             
         logger.error(f"montir terminate on error {err}")
+        
+    def dump_objects(self):
+        self._dump_summary()
+        self._dump_top_list()
             
     def add_count(self) -> None:
         self._frametotal += 1
@@ -96,11 +146,13 @@ class Monitor():
     def start(self) -> None:
         if (self._monitor is None):
             self._monitor = threading.Thread(target=self.__task_monitor__, daemon=True)
-            
+        
+        self._monitor_event.set()
         self._monitor.start()
         
     def stop(self) -> None:
         if (self._monitor is not None):
+            self._monitor_event.clear()
             self._monitor.join(1)
         
         self._monitor = None
@@ -112,3 +164,7 @@ class Monitor():
     @property
     def latency(self) -> float:
         return self._latency
+    
+    @property
+    def count(self) -> int:
+        return self._frametotal

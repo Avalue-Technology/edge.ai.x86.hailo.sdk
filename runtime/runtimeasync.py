@@ -6,7 +6,6 @@ import threading
 
 import cv2
 
-
 from .runtime import Runtime
 from ..commons.monitor import Monitor
 

@@ -1,10 +1,11 @@
 
-from enum import Enum
 import heapq
+from enum import Enum
 from typing import Any, List, Tuple
 
 import logging
 import threading
+
 import numpy
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class CircularBuffer():
 
     def __move_write_index__(self) -> None:
         self._write_index = (self._write_index + 1) % self._size
-        
+    
     def __add__(self, data: Any) -> int:
         # logger.debug(f"write[{self._write_index}]: {type(data)}")
         self._buffer[self._write_index] = data
@@ -53,7 +54,6 @@ class CircularBuffer():
     
         return self._write_index
         
-        
     def __next__(self) -> Any:
         if self._write_index == self._read_index and not self._isfull:
             return None
@@ -65,7 +65,7 @@ class CircularBuffer():
         self._isfull = False
 
         return result
-        
+    
     def __last__(self) -> Any:
         index = 0
         if self._read_index - 1 == 0:
@@ -102,9 +102,14 @@ class CircularBuffer():
             
             if self._method == CircularBufferMethod.LIFO:
                 return self.__last__()
-            
+    
     def clear(self) -> None:
         with self._lock:
+            
+            for i in range(self._size):
+                self._buffer[i] = None
+            del self._buffer
+            
             self._buffer = numpy.empty(self._size, dtype=object)
             self._write_index = 0
             self._read_index = 0

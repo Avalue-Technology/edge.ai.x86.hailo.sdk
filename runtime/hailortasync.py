@@ -29,8 +29,8 @@ from ..data.model_information import ModelInformation
 
 
 from hailo_platform import Device
-from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams,
-                                                FormatType, FormatOrder,
+from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams, ConfiguredInferModel,
+                                                FormatType, FormatOrder, InferModel,
                                                 MipiDataTypeRx, MipiPixelsPerClock,
                                                 MipiClockSelection, MipiIspImageInOrder,
                                                 MipiIspImageOutDataType, IspLightFrequency, HailoPowerMode,
@@ -67,7 +67,7 @@ class HailortAsync(RuntimeAsync):
         self._vdevice = VDevice(self._vdevice_params)
         
         self._infer_model = self._vdevice.create_infer_model(hef_path, self._session.get_network_group_names()[0])
-        self._configured_infer_model = self._infer_model.configure()
+        self._configured_infer_model: ConfiguredInferModel = self._infer_model.configure()
         
         self._device = Device()
         self._device_information = self._device.control.identify()
@@ -239,7 +239,7 @@ class HailortAsync(RuntimeAsync):
         return data.astype(numpy.uint8)
 
     def postprocess(self, bindings, source: InferenceSource) -> InferenceSource:
-        image = source.image
+
         binding = bindings[0]
         output = binding.output(self._output_name)
         outputs = output.get_buffer()
@@ -258,7 +258,7 @@ class HailortAsync(RuntimeAsync):
 
                 if score >= (source.confidence / 100):
                     box = self.decode6(
-                        image,
+                        source.image,
                         [x1, y1, x2, y2, score, i]
                     )
                     boxes.append(box)
@@ -272,38 +272,46 @@ class HailortAsync(RuntimeAsync):
         if (self.display):
             for i in indices:
                 box = boxes[i]
-                utils.drawbox(image, box)
-                utils.drawlabel(image, box)
+                utils.drawbox(source.image, box)
+                utils.drawlabel(source.image, box)
         
-        source.image = image
         return source
         
         
-    def create_bindings(self, frame: numpy.typing.NDArray):
-        return self._configured_infer_model.create_bindings(
-            input_buffers={
-                self._input_name: frame,
-            },
-            output_buffers={
-                self._output_name: numpy.empty(
-                    shape=self._infer_model.output(self._output_name).shape,
-                    dtype=numpy.float32,
-                )
-            }
+    def create_bindings(self, frame: numpy.typing.NDArray) -> ConfiguredInferModel.Bindings:
+        # return self._configured_infer_model.create_bindings(
+        #     input_buffers={
+        #         self._input_name: frame,
+        #     },
+        #     output_buffers={
+        #         self._output_name: numpy.empty(
+        #             shape=self._infer_model.output(self._output_name).shape,
+        #             dtype=numpy.float32,
+        #         )
+        #     }
+        # )
+        
+        bindings = self._configured_infer_model.create_bindings()
+        bindings.input(self._input_name).set_buffer(frame)
+        bindings.output(self._output_name).set_buffer(
+            numpy.empty(
+                shape=self._infer_model.output(self._output_name).shape,
+                dtype=numpy.float32,
+            )
         )
+        return bindings
         
     def callback(self, completion_info, bindings, source: InferenceSource) -> None:
         if completion_info.exception:
             logger.error(f"inference error: {completion_info.exception}")
             
         try:
-            source = self.postprocess(bindings, source)
+            self.postprocess(bindings, source)
             self._q_result.put(InferenceResult(source))
                 
         except Exception as e:
-            # logger.error(e)
-            pass
-            
+            logger.error(e)
+        
     def stop(self) -> None:
         self._running.clear()
         self.clear()
@@ -325,13 +333,16 @@ class HailortAsync(RuntimeAsync):
                 time.sleep(0.001)
                 continue
             
+            
+            # self._q_result.put(InferenceResult(source))
+            
             bindings = []
             bindings.append(
                 self.create_bindings(
                     self.preprocess(source.image)
                 )
             )
-                
+            
             source.timestamp = time.time()
 
             try:
