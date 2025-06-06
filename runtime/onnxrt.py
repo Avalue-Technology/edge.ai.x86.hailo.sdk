@@ -13,6 +13,7 @@ import numpy.typing
 import psutil
 import onnxruntime
 
+from arguments import Arguments
 from sdk.data.inference_source import InferenceSource
 
 
@@ -33,13 +34,11 @@ class Onnxrt(Runtime):
     
     def __init__(
         self,
-        onnx_path: str,
+        args: Arguments,
     ):
-        super().__init__()
+        super().__init__(args)
 
-        self._onnx_path = onnx_path
-        
-        self._session: onnxruntime.InferenceSession = onnxruntime.InferenceSession(self._onnx_path)
+        self._session: onnxruntime.InferenceSession = onnxruntime.InferenceSession(self._model_path)
         
         self._session_inputs = self._session.get_inputs()
         self._input = self._session_inputs[0]
@@ -60,7 +59,7 @@ class Onnxrt(Runtime):
         )
         
         self._information = ModelInformation(
-            Path(onnx_path).name,
+            Path(self._model_path).name,
             f"CPU {platform.processor()}",
 			self._width,
 			self._height,
@@ -216,13 +215,9 @@ class Onnxrt(Runtime):
         
     def inference_image_84(self, source: InferenceSource) -> InferenceResult:
         input_data = self.preprocess(source.image)
-        
-        now = time.time()
         output_data = self._session.run(None, {self._input.name: input_data})
-        end = time.time()
-        spendtime = end - now
         
-        if (not self.display):
+        if (not self._display):
             return InferenceResult(source)
         
         outputs = numpy.transpose(numpy.squeeze(output_data[0])) # type: ignore
@@ -253,13 +248,9 @@ class Onnxrt(Runtime):
     
     def inference_image_6(self, source: InferenceSource) -> InferenceResult:
         input_data = self.preprocess(source.image)
-        
-        now = time.time()
         output_data = self._session.run(None, {self._input.name: input_data})
-        end = time.time()
-        spendtime = end - now
         
-        if (not self.display):
+        if (not self._display):
             return InferenceResult(source)
 
         outputs = numpy.squeeze(output_data[0]) # type: ignore
@@ -286,6 +277,8 @@ class Onnxrt(Runtime):
         return InferenceResult(source)
     
     def inference(self, source: InferenceSource) -> InferenceResult:
+        if (self._no_inference):
+            return InferenceResult(source)
         
         if self._output.shape[1] == 84:  # YOLOv8-like
             return self.inference_image_84(source)

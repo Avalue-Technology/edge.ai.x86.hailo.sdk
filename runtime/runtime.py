@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 
 import cv2
 
+from arguments import Arguments
+
 from ..commons.monitor import Monitor
 
 from ..data.inference_source import InferenceSource
@@ -12,12 +14,15 @@ from ..data.model_information import ModelInformation
 
 class Runtime():
     
-    def __init__(self) -> None:
+    def __init__(self, args: Arguments) -> None:
         self._information: ModelInformation = ModelInformation("undefined", "undefined", 0, 0)
         self._temperature: int = 0
-        self._display: bool = False
         self._spendtime = 0.0
         self._fps = 0.0
+        
+        self._display: bool = args.display
+        self._model_path = args.model_path
+        self._no_inference = args.no_inference
         
     @property
     def monitor(self) -> Monitor:
@@ -63,15 +68,7 @@ class Runtime():
     @property
     def temperature(self) -> int:
         return self._temperature
-    
-    @property
-    def display(self) -> bool:
-        return self._display
-    
-    @display.setter
-    def display(self, display: bool) -> None:
-        self._display = display
-    
+
     @abstractmethod
     def inference(self, source: InferenceSource) -> InferenceResult:
         pass

@@ -160,7 +160,6 @@ def drawbox(
         (0, 255, 255),
         2
     )
-    
     return image
 
 
@@ -218,7 +217,6 @@ def drawlabel(
         1,
         cv2.LINE_AA
     )
-    
     return image
 
 

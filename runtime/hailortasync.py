@@ -15,6 +15,8 @@ import numpy.typing
 
 import cv2
 
+from arguments import Arguments
+
 from ..commons import utils
 from ..commons.monitor import Monitor
 
@@ -48,13 +50,11 @@ class HailortAsync(RuntimeAsync):
     
     def __init__(
         self,
-        hef_path: str,
+        args: Arguments,
     ):
-        super().__init__()
+        super().__init__(args)
         
-        self._hef_path = hef_path
-        
-        self._session = HEF(hef_path)
+        self._session = HEF(self._model_path)
         
         self._vdevice_params = VDevice.create_params()
         
@@ -66,7 +66,7 @@ class HailortAsync(RuntimeAsync):
         
         self._vdevice = VDevice(self._vdevice_params)
         
-        self._infer_model = self._vdevice.create_infer_model(hef_path, self._session.get_network_group_names()[0])
+        self._infer_model = self._vdevice.create_infer_model(self._model_path, self._session.get_network_group_names()[0])
         self._configured_infer_model: ConfiguredInferModel = self._infer_model.configure()
         
         self._device = Device()
@@ -118,7 +118,7 @@ class HailortAsync(RuntimeAsync):
         # logger.debug(self._width)
         
         self._information = ModelInformation(
-            Path(hef_path).name,
+            Path(self._model_path).name,
             str(self._device_information.device_architecture),
             self._width,
             self._height,
@@ -238,8 +238,7 @@ class HailortAsync(RuntimeAsync):
 
         return data.astype(numpy.uint8)
 
-    def postprocess(self, bindings, source: InferenceSource) -> InferenceSource:
-
+    def postprocess(self, bindings, source: InferenceSource) -> InferenceResult:
         binding = bindings[0]
         output = binding.output(self._output_name)
         outputs = output.get_buffer()
@@ -269,13 +268,12 @@ class HailortAsync(RuntimeAsync):
             source.threshold
         )
         
-        if (self.display):
-            for i in indices:
-                box = boxes[i]
-                utils.drawbox(source.image, box)
-                utils.drawlabel(source.image, box)
-        
-        return source
+    
+        for i in indices:
+            utils.drawbox(source.image, boxes[i])
+            utils.drawlabel(source.image, boxes[i])
+            
+        return InferenceResult(source)
         
         
     def create_bindings(self, frame: numpy.typing.NDArray) -> ConfiguredInferModel.Bindings:
@@ -291,9 +289,9 @@ class HailortAsync(RuntimeAsync):
         #     }
         # )
         
-        bindings = self._configured_infer_model.create_bindings()
-        bindings.input(self._input_name).set_buffer(frame)
-        bindings.output(self._output_name).set_buffer(
+        bindings: ConfiguredInferModel.Bindings = self._configured_infer_model.create_bindings()
+        bindings.input().set_buffer(frame)
+        bindings.output().set_buffer(
             numpy.empty(
                 shape=self._infer_model.output(self._output_name).shape,
                 dtype=numpy.float32,
@@ -306,8 +304,13 @@ class HailortAsync(RuntimeAsync):
             logger.error(f"inference error: {completion_info.exception}")
             
         try:
-            self.postprocess(bindings, source)
-            self._q_result.put(InferenceResult(source))
+            if (self._display):
+                result: InferenceResult = self.postprocess(bindings, source)
+                
+            else:
+                result: InferenceResult = InferenceResult(source)
+                
+            self._q_result.put(result)
                 
         except Exception as e:
             logger.error(e)
@@ -333,8 +336,12 @@ class HailortAsync(RuntimeAsync):
                 time.sleep(0.001)
                 continue
             
+            source.timestamp = time.time()
             
-            # self._q_result.put(InferenceResult(source))
+            # if (self._no_inference):
+            #     self._q_result.put(InferenceResult(source))
+            #     time.sleep(0.001)
+            #     continue
             
             bindings = []
             bindings.append(
@@ -343,15 +350,13 @@ class HailortAsync(RuntimeAsync):
                 )
             )
             
-            source.timestamp = time.time()
-
             try:
                 self._configured_infer_model.wait_for_async_ready(
                     10 * 1000,
                     1,
                 )
                 
-                self._configured_infer_model.run_async(
+                job = self._configured_infer_model.run_async(
                     bindings=bindings,
                     callback=partial(
                         self.callback,
@@ -359,6 +364,7 @@ class HailortAsync(RuntimeAsync):
                         source=source,
                     ),
                 )
+                job.wait(1000)
                 
             except Exception as e:
                 logger.error(e)

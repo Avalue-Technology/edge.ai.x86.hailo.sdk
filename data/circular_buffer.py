@@ -105,6 +105,12 @@ class CircularBuffer():
     
     def clear(self) -> None:
         with self._lock:
+            count = 0
+            for i in range(self._size):
+                if (self._buffer is not None):
+                    count += 1
+                    
+            logger.debug(f"clear {count} items at {repr(self._buffer)[:20]}... ")
             
             for i in range(self._size):
                 self._buffer[i] = None

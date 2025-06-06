@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Union
 
+from arguments import Arguments
+
 
 from .commons.monitor import Monitor
 
@@ -13,25 +15,25 @@ from .runtime.tflitert import Tflitert
 from .runtime.hailortasync import HailortAsync
 
 
-def loadonnx(onnxpath: str) -> Runtime:
-    return Onnxrt(onnxpath)
+def loadonnx(args: Arguments) -> Runtime:
+    return Onnxrt(args)
 
-def loadhefasync(hefpath: str) -> RuntimeAsync:
-    return HailortAsync(hefpath)
+def loadhefasync(args: Arguments) -> RuntimeAsync:
+    return HailortAsync(args)
 
-def loadtflite(tflitepath: str) -> Runtime:
-    return Tflitert(tflitepath)
+def loadtflite(args: Arguments) -> Runtime:
+    return Tflitert(args)
 
-def loadmodel(model_path: str) -> Union[Runtime, RuntimeAsync]:
-    mp = Path(model_path)
+def loadmodel(args: Arguments) -> Union[Runtime, RuntimeAsync]:
+    mp = Path(args.model_path)
 
     if (mp.suffix.lower() == ".onnx"):
-        return loadonnx(model_path)
+        return loadonnx(args)
     
     elif (mp.suffix.lower() == ".tflite"):
-        return loadtflite(model_path)
+        return loadtflite(args)
         
     elif (mp.suffix.lower() == ".hef"):
-        return loadhefasync(model_path)
+        return loadhefasync(args)
     
     raise ValueError(f"unsupport model type: {mp.suffix}")

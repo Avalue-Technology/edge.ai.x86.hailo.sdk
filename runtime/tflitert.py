@@ -13,6 +13,8 @@ import numpy.typing
 import psutil
 import tflite_runtime.interpreter as tflite
 
+from arguments import Arguments
+
 from ..commons import utils
 from ..commons.monitor import Monitor
 
@@ -30,13 +32,11 @@ class Tflitert(Runtime):
 
     def __init__(
         self,
-        tflite_path: str,
+        args: Arguments,
     ):
-        super().__init__()
+        super().__init__(args)
         
-        self._tflite_path = tflite_path
-        
-        self._session = tflite.Interpreter(model_path=tflite_path)
+        self._session = tflite.Interpreter(model_path=self._model_path)
         self._session.allocate_tensors()
         
         self._input = self._session.get_input_details()[0]
@@ -50,7 +50,7 @@ class Tflitert(Runtime):
         )
         
         self._information = ModelInformation(
-            Path(tflite_path).name,
+            Path(self._model_path).name,
             f"CPU {platform.processor()}",
             self._width,
             self._height
@@ -131,15 +131,14 @@ class Tflitert(Runtime):
     
     
     def inference(self, source: InferenceSource) -> InferenceResult:
-        input_data = self.preprocess(source.image)
+        if (self._no_inference):
+            return InferenceResult(source)
         
-        now = time.time()
+        input_data = self.preprocess(source.image)
         self._session.set_tensor(self._input.get("index"), input_data)
         self._session.invoke()
-        end = time.time()
-        spendtime = end - now
         
-        if (not self.display):
+        if (not self._display):
             return InferenceResult(source)
         
         output_data = self._session.get_tensor(self._output.get("index"))

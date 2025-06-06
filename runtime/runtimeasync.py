@@ -6,6 +6,8 @@ import threading
 
 import cv2
 
+from arguments import Arguments
+
 from .runtime import Runtime
 from ..commons.monitor import Monitor
 
@@ -18,14 +20,15 @@ logger = logging.getLogger(__name__)
 
 class RuntimeAsync(Runtime):
     
-    def __init__(self, size = 64) -> None:
-        super().__init__()
+    def __init__(self, args: Arguments) -> None:
+        super().__init__(args)
+        
+        self._size = args.streaming_size
+        
+        self._q_frame = CircularBuffer(self._size)
+        self._q_result = CircularBuffer(self._size)
         
         self._running: threading.Event = threading.Event()
-        self._size = size
-        
-        self._q_frame = CircularBuffer(size)
-        self._q_result = CircularBuffer(size)
     
     @property
     def running(self) -> threading.Event:
