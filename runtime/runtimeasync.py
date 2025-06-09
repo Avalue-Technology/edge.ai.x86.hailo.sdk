@@ -65,6 +65,10 @@ class RuntimeAsync(Runtime):
         pass
     
     @abstractmethod
+    def exit(self) -> None:
+        pass
+    
+    @abstractmethod
     def run(self) -> None:
         pass
     

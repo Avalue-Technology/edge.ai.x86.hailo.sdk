@@ -55,74 +55,24 @@ class HailortAsync(RuntimeAsync):
         super().__init__(args)
         
         self._session = HEF(self._model_path)
+        logger.debug(f"init {self._session}")
         
-        self._vdevice_params = VDevice.create_params()
-        
-        # hailo/hailort/hailort/libhailort/include/hailo/hailort.h:hailo_scheduling_algorithm_e
-        self._vdevice_params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
-        
-        # hailo/hailort/hailort/libhailort/include/hailo/hailort.h:hailo_vdevice_params_t
-        # self._vdevice_params.multi_process_service = True
-        
-        self._vdevice = VDevice(self._vdevice_params)
-        
-        self._infer_model = self._vdevice.create_infer_model(self._model_path, self._session.get_network_group_names()[0])
-        self._configured_infer_model: ConfiguredInferModel = self._infer_model.configure()
-        
-        self._device = Device()
-        self._device_information = self._device.control.identify()
-        
+       
         # Define dataset params
         self._input_vstream_info = self._session.get_input_vstream_infos()[0]
         self._output_vstream_info = self._session.get_output_vstream_infos()[0]
-        
-        self._input_name = self._input_vstream_info.name
-        self._input_type = self._input_vstream_info.format.type
-        
-        logger.debug(self._input_name)
-        logger.debug(self._input_type)
-        
-        self._output_name = self._output_vstream_info.name
-        self._output_type = self._output_vstream_info.format.type
-        
-        logger.debug(self._output_name)
-        logger.debug(self._output_type)
-                
-        logger.debug(self._input_vstream_info)
-        logger.debug(self._input_vstream_info.name)
-        logger.debug(self._input_vstream_info.format)
-        logger.debug(self._input_vstream_info.format.type)
-        
-        logger.debug(self._output_vstream_info)
-        logger.debug(self._output_vstream_info.name)
-        logger.debug(self._output_vstream_info.format)
-        logger.debug(self._output_vstream_info.format.type)
-        
-        logger.debug(self._configured_infer_model.get_async_queue_size())
-        
-        self._capacity: int = self._configured_infer_model.get_async_queue_size()
-        
-        # self._input_param = InputVStreamParams.make(
-        #     self._infer,
-        #     format_type=FormatType.UINT8,
-        # )
-        
-        # self._output_param = OutputVStreamParams.make(
-        #     self._infer,
-        #     format_type=FormatType.FLOAT32
-        # )
-        
         self._height, self._width, self._channels = self._input_vstream_info.shape
-        
-        # logger.debug(self._height)
-        # logger.debug(self._width)
-        
+        logger.debug(f"create stream information {self._height} {self._width} {self._channels}")
+
+        self._device = Device()
+        self._device_information = self._device.control.identify()
         self._information = ModelInformation(
             Path(self._model_path).name,
             str(self._device_information.device_architecture),
             self._width,
             self._height,
         )
+        logger.debug(f"create device information {self._information}")
         
         self._running = threading.Event()
     
@@ -238,9 +188,9 @@ class HailortAsync(RuntimeAsync):
 
         return data.astype(numpy.uint8)
 
-    def postprocess(self, bindings, source: InferenceSource) -> InferenceResult:
+    def postprocess(self, bindings: List[ConfiguredInferModel.Bindings], source: InferenceSource) -> InferenceResult:
         binding = bindings[0]
-        output = binding.output(self._output_name)
+        output = binding.output()
         outputs = output.get_buffer()
         
         row = len(outputs)
@@ -276,24 +226,18 @@ class HailortAsync(RuntimeAsync):
         return InferenceResult(source)
         
         
-    def create_bindings(self, frame: numpy.typing.NDArray) -> ConfiguredInferModel.Bindings:
-        # return self._configured_infer_model.create_bindings(
-        #     input_buffers={
-        #         self._input_name: frame,
-        #     },
-        #     output_buffers={
-        #         self._output_name: numpy.empty(
-        #             shape=self._infer_model.output(self._output_name).shape,
-        #             dtype=numpy.float32,
-        #         )
-        #     }
-        # )
+    def create_bindings(
+        self,
+        infermodel: InferModel,
+        configured_infermodel: ConfiguredInferModel,
+        frame: numpy.typing.NDArray
+    ) -> ConfiguredInferModel.Bindings:
         
-        bindings: ConfiguredInferModel.Bindings = self._configured_infer_model.create_bindings()
+        bindings: ConfiguredInferModel.Bindings = configured_infermodel.create_bindings()
         bindings.input().set_buffer(frame)
         bindings.output().set_buffer(
             numpy.empty(
-                shape=self._infer_model.output(self._output_name).shape,
+                shape=(infermodel.output().shape),
                 dtype=numpy.float32,
             )
         )
@@ -316,59 +260,75 @@ class HailortAsync(RuntimeAsync):
             logger.error(e)
         
     def stop(self) -> None:
+        logger.debug(f"stop {self}")
         self._running.clear()
         self.clear()
         
-        self._configured_infer_model.wait_for_async_ready(
-            timeout_ms=10000,
-            frames_count=self._capacity
-        )
-        
+    def exit(self) -> None:
+        time.sleep(0.1)
+        logger.debug(f"exit {self._device}")
+        self._device.release()
+                
     def run(self):
         self._running.set()
                 
         logger.debug(f"start grab image")
         
-        while self._running.is_set():
-            
-            source: InferenceSource = self._q_frame.get()
-            if source is None or source.image is None:
-                time.sleep(0.001)
-                continue
-            
-            source.timestamp = time.time()
-            
-            # if (self._no_inference):
-            #     self._q_result.put(InferenceResult(source))
-            #     time.sleep(0.001)
-            #     continue
-            
-            bindings = []
-            bindings.append(
-                self.create_bindings(
-                    self.preprocess(source.image)
-                )
+        self._vdevice_params = VDevice.create_params()
+        self._vdevice_params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
+        
+        
+        with VDevice(self._vdevice_params) as vdevice:
+            logger.debug(f"create vdevice {vdevice}")
+            infermodel = vdevice.create_infer_model(
+                self._model_path,
+                self._session.get_network_group_names()[0]
             )
+        
+            with infermodel.configure() as configured_infermodel:
             
-            try:
-                self._configured_infer_model.wait_for_async_ready(
-                    10 * 1000,
-                    1,
-                )
-                
-                job = self._configured_infer_model.run_async(
-                    bindings=bindings,
-                    callback=partial(
-                        self.callback,
-                        bindings=bindings,
-                        source=source,
-                    ),
-                )
-                job.wait(1000)
-                
-            except Exception as e:
-                logger.error(e)
-                pass
+                while self._running.is_set():
+                    
+                    source: InferenceSource = self._q_frame.get()
+                    if source is None or source.image is None:
+                        time.sleep(0.001)
+                        continue
+                    
+                    source.timestamp = time.time()
+                    
+                    if (self._no_inference):
+                        self._q_result.put(InferenceResult(source))
+                        time.sleep(0.001)
+                        continue
+                    
+                    bindings = []
+                    bindings.append(
+                        self.create_bindings(
+                            infermodel,
+                            configured_infermodel,
+                            self.preprocess(source.image)
+                        )
+                    )
+                    
+                    try:
+                        configured_infermodel.wait_for_async_ready(
+                            10 * 1000,
+                            1,
+                        )
+                        
+                        job = configured_infermodel.run_async(
+                            bindings=bindings,
+                            callback=partial(
+                                self.callback,
+                                bindings=bindings,
+                                source=source,
+                            ),
+                        )
+                        job.wait(1000)
+                        
+                    except Exception as e:
+                        logger.error(e)
+                        pass
         
         self._running.clear()
         self.clear()
