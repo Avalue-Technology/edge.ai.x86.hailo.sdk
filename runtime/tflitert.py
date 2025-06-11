@@ -1,11 +1,9 @@
 
 import logging
 import platform
-import time
 
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
-from collections import defaultdict
+from typing import List
 
 import cv2
 import numpy
@@ -16,7 +14,6 @@ import tflite_runtime.interpreter as tflite
 from arguments import Arguments
 
 from ..commons import utils
-from ..commons.monitor import Monitor
 
 from ..data.bounding_box import BoundingBox
 from ..data.coco_90 import find_class_id

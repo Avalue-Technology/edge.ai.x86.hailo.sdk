@@ -2,10 +2,8 @@
 import logging
 from pathlib import Path
 import platform
-import time
 
-from typing import Dict, List, Sequence, Tuple
-from collections import defaultdict
+from typing import List, Sequence
 
 import cv2
 import numpy
@@ -18,7 +16,6 @@ from sdk.data.inference_source import InferenceSource
 
 
 from ..commons import utils
-from ..commons.monitor import Monitor
 
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id

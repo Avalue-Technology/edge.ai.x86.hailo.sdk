@@ -90,3 +90,6 @@ CMakeLists.txt.user*
 
 venv_hailo
 *venv*
+
+samples/videos
+samples/images

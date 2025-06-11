@@ -1,7 +1,5 @@
 
-from abc import ABC, abstractmethod
-
-import cv2
+from abc import abstractmethod
 
 from arguments import Arguments
 

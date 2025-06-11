@@ -1,32 +1,36 @@
-# Hailo SDK on Ubuntu 22.04
-
+# edge.ai.x86.hailo.sdk
+ - Hailo runtime sdk with HailoRT v4.21.0 [Reference](https://hailo.ai/developer-zone/documentation/hailort-v4-21-0/)
+ 
  - models
- includes infrence model from Hailo Model Zoo
+    - includes infrence model from Hailo Model Zoo.
 
  - packages
- includes Hailo runtime required dependency
+    - includes Hailo runtime required dependency.
 
-# install require
+ - samples
+    - includes videos and images of inference samples you have.
 
-install driver and hailort (include hailortcli, hailo-accelerator-integration-tool)
+ # Install dependencies
+
+ - install driver and hailort (include hailortcli, hailo-accelerator-integration-tool)
 ```sh
 sudo dkpg -i packages/*.deb
 ```
 
-install python3.11 for hailo sdk
+ - install python3.11 for hailo sdk
 ```sh
-sudo apt install -y python3.11 python3.11-dev python3.11-venv
-```
-init python environment for hailo
-```sh
-python3 -m venv --system-site-package venv_hailo
-source venv_hailo/bin/activate
-
-pip install hailort-4.20.0-cp311-cp311-linux_x86_64.whl
+sudo apt install -y python3.11 python3.11-dev python3.11-venv python3-virtualenv
 ```
 
-for more different type of model file like onnx, tflite
+ - init python environment for hailo
 ```sh
-pip install onnxruntime tflite-runtime
-pip install psutil # for monitor cpu usages
+virtualenv venv --python=python3.11
+source venv/bin/activate
+pip install packages/hailort-*.whl
+pip install -r requirements.txt
 ```
+
+# Know issue
+HailoRT v4.21.0 has a memory leak issue. When running for a long time, it will cause the oom killer to force the programe to close or cause the os to crash.
+
+The current workround: After running a video, close the programe and reopen it.

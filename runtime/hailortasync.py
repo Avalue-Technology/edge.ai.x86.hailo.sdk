@@ -5,10 +5,9 @@ import logging
 import threading
 import time
 
-from concurrent.futures import ThreadPoolExecutor
 
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 import numpy
 import numpy.typing
@@ -18,11 +17,9 @@ import cv2
 from arguments import Arguments
 
 from ..commons import utils
-from ..commons.monitor import Monitor
 
 from ..runtime.runtimeasync import RuntimeAsync
 
-from ..data.circular_buffer import CircularBuffer
 from ..data.bounding_box import BoundingBox
 from ..data.coco_80 import find_class_id
 from ..data.inference_source import InferenceSource
@@ -31,18 +28,10 @@ from ..data.model_information import ModelInformation
 
 
 from hailo_platform import Device
-from hailo_platform.pyhailort.pyhailort import (HEF, ConfigureParams, ConfiguredInferModel,
-                                                FormatType, FormatOrder, InferModel,
-                                                MipiDataTypeRx, MipiPixelsPerClock,
-                                                MipiClockSelection, MipiIspImageInOrder,
-                                                MipiIspImageOutDataType, IspLightFrequency, HailoPowerMode,
-                                                Endianness, HailoStreamInterface,
-                                                InputVStreamParams, OutputVStreamParams,
-                                                InputVStreams, OutputVStreams,
-                                                InferVStreams, HailoStreamDirection, HailoFormatFlags, HailoCpuId, Device, VDevice,
-                                                DvmTypes, PowerMeasurementTypes, SamplingPeriod, AveragingFactor, MeasurementBufferIndex,
-                                                HailoRTException, HailoSchedulingAlgorithm, HailoRTStreamAbortedByUser, AsyncInferJob,
-                                                HailoCommunicationClosedException)
+from hailo_platform.pyhailort.pyhailort import (HEF, ConfiguredInferModel,
+                                                InferModel,
+                                                Device, VDevice,
+                                                HailoSchedulingAlgorithm)
 
 logger = logging.getLogger(__name__)
 
@@ -270,8 +259,8 @@ class HailortAsync(RuntimeAsync):
     def exit(self) -> None:
         time.sleep(0.1)
         logger.debug(f"exit {self._device}")
-        self._device.release()
-        del self._device
+        self._device.release() # type: ignore
+        self._device = None
                 
     def run(self):
         self._running.set()

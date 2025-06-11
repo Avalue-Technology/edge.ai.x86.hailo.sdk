@@ -1,20 +1,16 @@
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 import logging
 import threading
 
-import cv2
-
 from arguments import Arguments
 
 from .runtime import Runtime
-from ..commons.monitor import Monitor
 
 from ..data.circular_buffer import CircularBuffer
 from ..data.inference_source import InferenceSource
 from ..data.inference_result import InferenceResult
-from ..data.model_information import ModelInformation
 
 logger = logging.getLogger(__name__)
 
