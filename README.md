@@ -1,16 +1,8 @@
 # edge.ai.x86.hailo.sdk
  - Hailo runtime sdk with HailoRT v4.21.0 [Reference](https://hailo.ai/developer-zone/documentation/hailort-v4-21-0/)
  
- - models
-    - includes infrence model from Hailo Model Zoo.
 
- - packages
-    - includes Hailo runtime required dependency.
-
- - samples
-    - includes videos and images of inference samples you have.
-
- # Install dependencies
+# Install dependencies
 
  - install driver and hailort (include hailortcli, hailo-accelerator-integration-tool)
 ```sh
