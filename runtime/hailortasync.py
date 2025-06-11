@@ -83,6 +83,9 @@ class HailortAsync(RuntimeAsync):
     
     @property
     def temperature(self) -> int:
+        if (not self._device):
+            return 0
+        
         return int(self._device.control.get_chip_temperature().ts0_temperature)
     
     def nmsboxes(
@@ -268,6 +271,7 @@ class HailortAsync(RuntimeAsync):
         time.sleep(0.1)
         logger.debug(f"exit {self._device}")
         self._device.release()
+        del self._device
                 
     def run(self):
         self._running.set()
