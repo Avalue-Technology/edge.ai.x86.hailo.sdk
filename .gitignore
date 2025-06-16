@@ -91,5 +91,8 @@ CMakeLists.txt.user*
 venv_hailo
 *venv*
 
+models/classification
+models/instance-segmentation
+models/object-detection
 samples/videos
 samples/images
